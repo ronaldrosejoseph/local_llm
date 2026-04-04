@@ -1,4 +1,4 @@
-# Gemma Local Chat 🤖
+# LLM Local Chat 🤖
 
 A premium, fast, and local LLM chat interface inspired by ChatGPT, optimized for Apple Silicon using the **MLX** framework.
 
@@ -19,10 +19,10 @@ To run this application on your Mac:
 
 ## 🌟 Features
 
-- **Apple MLX Engine**: High-performance text generation with `gemma-3-4b-it-4bit-DWQ`.
+- **Apple MLX Engine**: High-performance text generation with LLMs.
 - **Local & Private**: All inference and chat history stay on your Mac.
 - **Voice-Enabled**:
-    - **Speech-to-Text**: Click the mic to speak to Gemma.
+    - **Speech-to-Text**: Click the mic to speak to the LLM.
     - **Text-to-Speech**: AI responses can be spoken aloud using the macOS `say` command.
 - **Persistent History**: Conversations are saved to a SQLite database and can be resumed anytime.
 - **Premium UI**: Dark-themed, glassmorphic design with smooth animations.
