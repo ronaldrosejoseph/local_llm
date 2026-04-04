@@ -18,10 +18,28 @@ fi
 
 echo "Starting LLM server..."
 
-# 1. Create venv if it doesn't exist
+# 1. Setup Python Environment
+if command -v brew >/dev/null 2>&1; then
+    echo "Ensuring Python 3 is installed and up-to-date via Homebrew..."
+    if ! brew list python@3 &>/dev/null && ! brew list python3 &>/dev/null && ! brew list python &>/dev/null; then
+        echo "Installing Python 3..."
+        brew install python3
+    else
+        echo "Checking for Python updates..."
+        brew upgrade python3 2>/dev/null || echo "Python 3 is up-to-date."
+    fi
+    PYTHON_CMD="$(brew --prefix)/bin/python3"
+else
+    echo "Homebrew not found. Falling back to system python3."
+    PYTHON_CMD="python3"
+fi
+
+echo "Using Python: $($PYTHON_CMD --version)"
+
+# 2. Create venv if it doesn't exist
 if [ ! -d "venv" ]; then
     echo "Virtual environment not found. Creating venv..."
-    python3 -m venv venv
+    $PYTHON_CMD -m venv venv
     if [ $? -ne 0 ]; then
         echo "Error: Failed to create venv. Please make sure python3 is installed."
         exit 1
