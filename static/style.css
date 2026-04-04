@@ -183,6 +183,7 @@ html {
 /* Main Chat Styling */
 .chat-main {
     flex: 1;
+    min-width: 0; /* Prevents long code blocks from stretching flex container */
     display: flex;
     flex-direction: column;
     background-color: var(--primary-bg);
@@ -382,6 +383,9 @@ html {
     border-radius: 18px;
     line-height: 1.5;
     font-size: 15px;
+    max-width: 100%;
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 
 .user .message-content {
