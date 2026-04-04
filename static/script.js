@@ -39,11 +39,12 @@ const stripControlTokens = (text) => {
         .trim();
 };
 
-// Function to safely render markdown with HTML escaping
+// Function to safely render markdown with HTML escaping and sanitization
 function renderMarkdown(content) {
     if (!content) return "";
     const clean = stripControlTokens(content);
-    return marked.parse(clean);
+    const html = marked.parse(clean);
+    return window.DOMPurify ? DOMPurify.sanitize(html) : html;
 }
 
 // Global Marked configuration

@@ -20,13 +20,16 @@ echo "Starting LLM server..."
 
 # 1. Setup Python Environment
 if command -v brew >/dev/null 2>&1; then
-    echo "Ensuring Python 3 is installed and up-to-date via Homebrew..."
     if ! brew list python@3 &>/dev/null && ! brew list python3 &>/dev/null && ! brew list python &>/dev/null; then
-        echo "Installing Python 3..."
-        brew install python3
+        echo "Python 3 not found. Installing via Homebrew..."
+        # Disable auto-update just for this install to speed it up
+        HOMEBREW_NO_AUTO_UPDATE=1 brew install python3
     else
-        echo "Checking for Python updates..."
-        brew upgrade python3 2>/dev/null || echo "Python 3 is up-to-date."
+        # Swiftly check if the installed brew python is older than 3.14 without hitting the network
+        if ! $(brew --prefix)/bin/python3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 14) else 1)" 2>/dev/null; then
+            echo "Installed Python is older than 3.14. Upgrading via Homebrew..."
+            brew upgrade python3
+        fi
     fi
     PYTHON_CMD="$(brew --prefix)/bin/python3"
 else
