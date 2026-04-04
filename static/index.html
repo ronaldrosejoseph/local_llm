@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local LLM</title>
+    <link rel="icon"
+        href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E🤖%3C/text%3E%3C/svg%3E">
+
+    <link rel="stylesheet" href="style.css">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@400;600;700&display=swap"
+        rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <button class="new-chat-btn" id="new-chat-btn">
+                <i data-lucide="plus"></i> New Chat
+            </button>
+            <div class="chat-history" id="chat-history">
+                <!-- History items will be injected here -->
+            </div>
+
+            <!-- Model Management Section -->
+            <div class="sidebar-footer">
+                <div class="model-selection">
+                    <label for="model-select">Active Model</label>
+                    <select id="model-select">
+                        <!-- Options will be injected here -->
+                    </select>
+                </div>
+                <div class="add-model">
+                    <input type="text" id="new-model-input" placeholder="mlx-community/...">
+                    <button id="add-model-btn" title="Add Model">
+                        <i data-lucide="plus-circle"></i>
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Sidebar Overlay (Mobile) -->
+        <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+        <!-- Main Chat Area -->
+        <main class="chat-main">
+            <header class="chat-header">
+                <button class="menu-toggle" id="menu-toggle">
+                    <i data-lucide="menu"></i>
+                </button>
+                <div class="model-info">
+                    <span class="model-badge">Gemma 3 4B</span>
+                    <span id="current-chat-title">New Conversation</span>
+                </div>
+            </header>
+
+            <div class="messages-container" id="messages-container">
+                <div class="welcome-screen" id="welcome-screen">
+                    <div class="welcome-content">
+                        <h1>How can I help you today?</h1>
+                        <p>Experimental Local LLM Chat powered by MLX</p>
+                    </div>
+                </div>
+            </div>
+
+            <footer class="chat-input-area">
+                <div class="input-wrapper">
+                    <button class="voice-btn" id="voice-btn" title="Speak to chat">
+                        <i data-lucide="mic"></i>
+                    </button>
+                    <textarea id="chat-input" placeholder="Message Gemma..." rows="1"></textarea>
+                    <button class="send-btn" id="send-btn">
+                        <i data-lucide="arrow-up"></i>
+                    </button>
+                    <button class="stop-btn" id="stop-btn" style="display: none;" title="Stop generation">
+                        <i data-lucide="square" style="fill: currentColor;"></i>
+                    </button>
+                </div>
+                <div class="input-footer">
+                    <label class="switch-container">
+                        <input type="checkbox" id="auto-speak-toggle">
+                        <span class="switch-label">Auto-speak response</span>
+                    </label>
+                </div>
+            </footer>
+        </main>
+    </div>
+    <!-- Custom Modal -->
+    <div id="modal-container" class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <i data-lucide="alert-circle" class="modal-icon"></i>
+                <h2>Delete Chat?</h2>
+            </div>
+            <p>This action cannot be undone. Are you sure you want to permanently delete this conversation?</p>
+            <div class="modal-actions">
+                <button id="modal-cancel-btn" class="modal-btn secondary">Cancel</button>
+                <button id="modal-confirm-btn" class="modal-btn danger">Delete</button>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>

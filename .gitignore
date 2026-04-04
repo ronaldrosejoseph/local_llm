@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+env/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.cache
+nosetests.xml
+coverage.xml
+*.renv
+*.anaconda
+
+# Logs and runtime
+*.log
+*.pid
+server.pid
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+
+# Database (keep local history private)
+database/*.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
