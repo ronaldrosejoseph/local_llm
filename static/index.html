@@ -70,7 +70,17 @@
             </div>
 
             <footer class="chat-input-area">
+                <div id="attachment-pill-container" style="display:none; padding-bottom:10px;">
+                    <span style="display: inline-flex; align-items: center; background: rgba(85,170,255,0.2); color: #55aaff; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600;">
+                        <i data-lucide="file-text" style="width: 14px; height: 14px; margin-right: 6px;"></i>
+                        <span id="attachment-name">doc.pdf</span>
+                    </span>
+                </div>
                 <div class="input-wrapper">
+                    <input type="file" id="file-upload" accept=".txt,.pdf,.png,.jpg,.jpeg,.webp" style="display: none;">
+                    <button class="attach-btn" id="attach-btn" title="Attach Document or Image" style="background: transparent; border: none; cursor: pointer; padding: 10px; border-radius: 50%; color: var(--text-muted); transition: all 0.2s; display: flex; align-items: center; justify-content: center;">
+                        <i data-lucide="paperclip"></i>
+                    </button>
                     <button class="voice-btn" id="voice-btn" title="Speak to chat">
                         <i data-lucide="mic"></i>
                     </button>

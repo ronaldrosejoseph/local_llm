@@ -1,80 +1,97 @@
 # LLM Local Chat 🤖
 
-A premium, fast, and local LLM chat interface inspired by ChatGPT, optimized for Apple Silicon using the **MLX** framework.
+A premium, fast, and local LLM chat interface inspired by ChatGPT, heavily optimized for Apple Silicon using the **MLX** and **PyTorch MPS** frameworks.
 
-## Getting Started
+Run massive open-source models completely offline while leveraging premium capabilities like Live Web Search, Document Retrieval (RAG), and Image Generation—all processed securely natively on your Mac.
 
-To run this application on your Mac:
+---
 
-1. **Clone the repository.**
-2. **Run the start script:**
-   ```bash
-   chmod +x start.sh stop.sh restart.sh
-   ./start.sh
-   ```
-   *The script will automatically create a virtual environment, install necessary MLX dependencies, and initialize the database on its first run.*
+## 🌟 Capabilities Matrix
 
-3. **Access the Chat:**
-   Open your browser at [http://localhost:8000](http://localhost:8000)
+This application transforms your machine into a fully private AI workstation:
 
-## 🌟 Features
+### 🧠 Core Intelligence
+- **Apple MLX Engine**: Experience lightning-fast text generation using quantized `mlx-community` LLMs without draining your battery.
+- **Local & Private**: All inference, embedding, and chat history stay 100% locally on your machine.
+- **Persistent Memory**: Chat histories are saved securely to a SQLite database and can be resumed at any time.
 
-- **Apple MLX Engine**: High-performance text generation with LLMs.
-- **Local & Private**: All inference and chat history stay on your Mac.
-- **Voice-Enabled**:
-    - **Speech-to-Text**: Click the mic to speak to the LLM.
-    - **Text-to-Speech**: AI responses can be spoken aloud using the macOS `say` command.
-- **Persistent History**: Conversations are saved to a SQLite database and can be resumed anytime.
-- **Premium UI**: Dark-themed, glassmorphic design with smooth animations.
+### 🔍 Advanced Tooling
+- **Live Web Search (`/web`)**: 
+  - Start any message with `/web` (e.g., `/web What's the latest tech news?`). 
+  - The backend intercepts the prompt, scrapes real-time DuckDuckGo results completely free of API bounds, and invisibly feeds them to your LLM for pinpoint accuracy.
+- **Document Chat & RAG (Retrieval-Augmented Generation)**: 
+  - Click the **Paperclip Icon** to upload `.txt` or `.pdf` files. 
+  - An ultra-fast local embedding pipeline chunks and indexes your documents into memory. Subsequent messages will dynamically grab the most relevant context vectors using Cosine Similarity natively over CPU/MPS.
+
+### 📸 Vision & Image Generation
+- **Text-To-Image Generation (`/imagine`)**: 
+  - Start a prompt with `/imagine` (e.g., `/imagine A futuristic cyberpunk city`) to bypass the text LLM and boot a `StableDiffusionPipeline`.
+  - Images are generated locally on your Mac's GPU and streamed straight back into the chat window.
+- **Image-To-Image Editing (`/edit`)**: 
+  - Upload a source photo via the **Paperclip Icon** and enter a prompt starting with `/edit` (e.g., `/edit Change the background to a sunny beach in Hawaii`).
+  - The `StableDiffusionImg2ImgPipeline` edits the source photo using your prompt structurally and returns the modified image.
+- **Vision Models (`mlx_vlm`)**: 
+  - Hook into multimodal functionality natively! Pass photos seamlessly into Vision LLMs locally (e.g., `Qwen-VL`).
+
+### 🎙️ Audio Interaction
+- **Speech-to-Text**: Click the mic icon to dictate physical voice sequences to the LLM.
+- **Text-to-Speech**: AI responses can be spoken aloud intelligently using the integrated macOS `say` command daemon.
+
+---
 
 ## 🚀 Getting Started
 
 ### 1. Requirements
 
 - A Mac with Apple Silicon (M1, M2, M3, etc.)
-- Python 3.14+ (or compatible)
+- Python 3.14+ (or compatible environment).
 
-### 2. Setup
+### 2. Fast Setup (Recommended)
 
-If dependencies are not yet installed in your `venv`:
+To install and boot the server instantly without fighting dependencies, simply execute the startup shell script. It will automatically detect your environment, install or compile the required dependencies, create your virtual environment natively, and launch the server:
+
 ```bash
-./venv/bin/python3 -m pip install fastapi uvicorn mlx_lm
+chmod +x start.sh stop.sh restart.sh
+./start.sh
 ```
 
-Initialize the database:
-```bash
-./venv/bin/python3 init_db.py
-```
+*(Note: The first time you execute an image generation command, the PyTorch tensors will download the Stable Diffusion baseline models locally, which may take ~2-5GB of space.)*
 
-Start and stop the FastAPI backend using the included management scripts:
+### 3. Server Management
+
+Control your FastAPI application running in the background natively:
 
 ```bash
-# Start the server (background)
+# Boot server locally
 ./start.sh
 
-# Stop the server
+# Complete graceful shutdown
 ./stop.sh
 
-# Restart the server
+# Flush and restart (Useful when changing underlying backend code)
 ./restart.sh
 ```
 
-Open your browser and navigate to:
-**[http://localhost:8000](http://localhost:8000)**
+**Access the Chat**: Open your browser and navigate to [http://localhost:8000](http://localhost:8000).
 
-## 🛠️ Tech Stack
+---
 
-- **Backend**: FastAPI, MLX, SQLite
-- **Frontend**: Vanilla HTML/CSS/JS, Lucide Icons, Google Fonts
-- **Default Model**: `mlx-community/gemma-3-4b-it-4bit-DWQ`
+## 🛠️ Architecture
 
-## 🧩 Available Models
+- **Backend**: FastAPI, MLX (`mlx_lm`, `mlx_vlm`), PyTorch, Diffusers, Sentence-Transformers
+- **Frontend**: Vanilla HTML/CSS/JS, DOMPurify (XSS Protection), Lucide Icons
+- **Storage**: SQLite natively tracking chat IDs, messages, and model registries.
+- **Default Baseline Architecture**: `mlx-community/gemma-3-4b-it-4bit-DWQ`
 
-These are the some of the models that can be used:
+---
 
-- **Llama 3.2 1B**: `mlx-community/Llama-3.2-1B-Instruct-4bit`
-- **Qwen 2.5 Coder 7B**: `mlx-community/Qwen2.5-Coder-7B-Instruct-4bit`
+## 🧩 Modding & Available Models
+
+The application dynamically detects model environments. You can add new ones by pasting their Hugging Face identifier into the custom UI settings modal:
+
 - **Gemma 3 12B**: `mlx-community/gemma-3-12b-it-4bit-DWQ`
+- **Qwen 2.5 Coder 7B**: `mlx-community/Qwen2.5-Coder-7B-Instruct-4bit`
+- **Llama 3.2 1B**: `mlx-community/Llama-3.2-1B-Instruct-4bit`
 
 > [!TIP]
-> You can switch between these models instantly using the sidebar dropdown, or add new ones by pasting their Hugging Face identifier (e.g., `mlx-community/name`).
+> You can switch between active models instantly using the sidebar dropdown! The MLX engine will automatically dump the previous model from VRAM and allocate the new pipeline on the fly.

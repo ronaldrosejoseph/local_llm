@@ -2,7 +2,7 @@ import os
 import uuid
 import sqlite3
 import subprocess
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
@@ -13,6 +13,8 @@ import json
 import asyncio
 from huggingface_hub import HfApi
 from contextlib import closing
+import io
+import numpy as np
 
 app = FastAPI()
 
@@ -25,6 +27,16 @@ DB_PATH = "database/chats.db"
 
 # Track 'say' subprocesses explicitly to prevent pkill hijacking
 say_processes = set()
+
+embedder_model = None
+document_store = {} # mapping chat_id -> lists of dicts {"text": chunk, "emb": vector}
+
+def get_embedder():
+    global embedder_model
+    if embedder_model is None:
+        from sentence_transformers import SentenceTransformer
+        embedder_model = SentenceTransformer("all-MiniLM-L6-v2")
+    return embedder_model
 
 # Database helper functions
 def get_db_connection():
@@ -87,6 +99,58 @@ def get_messages(chat_id: str):
         messages = conn.execute("SELECT role, content FROM messages WHERE chat_id = ? ORDER BY timestamp", (chat_id,)).fetchall()
     return [{"role": m["role"], "content": m["content"]} for m in messages]
 
+@app.post("/api/upload-document")
+async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)):
+    try:
+        content = await file.read()
+        
+        # 1. Handle Vision Image Uploads
+        if file.filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+            import os
+            if not os.path.exists("static/images"):
+                os.makedirs("static/images")
+            img_path = f"static/images/tmp_{uuid.uuid4().hex[:8]}_{file.filename}"
+            with open(img_path, "wb") as f:
+                f.write(content)
+            
+            if chat_id not in document_store:
+                document_store[chat_id] = []
+            # We flag this chunk as an image to bypass text RAG
+            document_store[chat_id].append({"type": "image", "path": img_path})
+            return {"status": "ok", "chunks": 1, "filename": file.filename}
+            
+        # 2. Handle Text Docs for RAG
+        text = ""
+        if file.filename.lower().endswith(".pdf"):
+            from PyPDF2 import PdfReader
+            pdf = PdfReader(io.BytesIO(content))
+            for page in pdf.pages:
+                extracted = page.extract_text()
+                if extracted:
+                    text += extracted + "\n"
+        else:
+            text = content.decode("utf-8", errors="ignore")
+            
+        chunk_size = 800
+        chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size) if len(text[i:i+chunk_size].strip()) > 50]
+        
+        if not chunks:
+             return {"status": "ok", "chunks": 0}
+             
+        model = get_embedder()
+        embeddings = model.encode(chunks)
+        
+        if chat_id not in document_store:
+            document_store[chat_id] = []
+            
+        for chunk, emb in zip(chunks, embeddings):
+            document_store[chat_id].append({"type": "text", "text": chunk, "emb": emb})
+            
+        return {"status": "ok", "chunks": len(chunks), "filename": file.filename}
+    except Exception as e:
+        print(f"Error uploading doc: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/chat")
 async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
     # 1. Start or resume chat
@@ -107,9 +171,253 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
         history = conn.execute("SELECT role, content FROM messages WHERE chat_id = ? ORDER BY timestamp", (chat_id,)).fetchall()
     
     # 4. Format prompt
+    # 2b. Check for Web Search Triggering
+    message_content = chat_data.message
+    # 2c. Check for Image Generation Triggering
+    if message_content.strip().startswith("/imagine"):
+        prompt = message_content.strip()[8:].strip()
+        print(f"Triggering image generation for: {prompt}")
+        
+        async def image_generator():
+            yield f'data: {json.dumps({"chat_id": chat_id})}\n\n'
+            yield f'data: {json.dumps({"content": "### 🎨 Diffusers Pipeline Active\n\n**Booting Apple Silicon GPUs...**"})}\n\n'
+            
+            import threading
+            import queue
+            import asyncio
+            q = queue.Queue()
+            img_name = f"gen_{uuid.uuid4().hex[:8]}.png"
+            
+            def generation_thread():
+                try:
+                    import torch
+                    from diffusers import StableDiffusionPipeline
+                    import os
+                    
+                    if not os.path.exists("static/images"):
+                        os.makedirs("static/images")
+                        
+                    model_id = "runwayml/stable-diffusion-v1-5"
+                    pipe = StableDiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float16)
+                    pipe = pipe.to("mps")
+                    
+                    def cb(pipe_c, step_index, timestep, callback_kwargs):
+                        progress = int((step_index / pipe_c.num_timesteps) * 100)
+                        q.put({"progress": progress})
+                        return callback_kwargs
+                        
+                    image = pipe(prompt, callback_on_step_end=cb).images[0]
+                    img_path = f"static/images/{img_name}"
+                    image.save(img_path)
+                    
+                    markdown_img = f"![{prompt}](/images/{img_name})\n"
+                    assistant_full_reply = f"Here is the image you requested:\n\n{markdown_img}"
+                    with closing(get_db_connection()) as conn:
+                        conn.execute(
+                            "INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)",
+                            (chat_id, "assistant", assistant_full_reply)
+                        )
+                        conn.commit()
+                        
+                    q.put({"image": img_name})
+                except Exception as e:
+                    q.put({"error": str(e)})
+
+            threading.Thread(target=generation_thread).start()
+            
+            def get_ascii_bar(pct, length=20):
+                filled = int((pct / 100) * length)
+                return "█" * filled + "░" * (length - filled)
+                
+            while True:
+                try:
+                    msg = q.get_nowait()
+                    if "progress" in msg:
+                        pct = msg["progress"]
+                        bar = get_ascii_bar(pct)
+                        status = f"### 🎨 Diffusers Pipeline Active\n\n**Generating image natively...**\n\n`{bar}` **{pct}%**\n\n*(Processing tensors...)*"
+                        yield f'data: {json.dumps({"replace": status})}\n\n'
+                    elif "image" in msg:
+                        yield f'data: {json.dumps({"replace": f"![Generated Image](/images/{msg['image']})"})}\n\n'
+                        break
+                    elif "error" in msg:
+                        yield f'data: {json.dumps({"replace": f"**Error:** {msg['error']}"})}\n\n'
+                        break
+                except queue.Empty:
+                    await asyncio.sleep(0.2)
+                    
+            yield 'data: [DONE]\n\n'
+            
+        return StreamingResponse(image_generator(), media_type="text/event-stream")
+        
+    # 2d. Check for Image-to-Image Editing Triggering
+    if message_content.strip().startswith("/edit"):
+        prompt = message_content.strip()[5:].strip()
+        print(f"Triggering image editing for: {prompt}")
+        
+        # Verify an image has been uploaded to this session
+        has_image = False
+        source_image_path = None
+        if chat_id in document_store:
+            # Grab newest uploaded image natively
+            for doc in reversed(document_store[chat_id]):
+                if doc.get("type") == "image":
+                    has_image = True
+                    source_image_path = doc["path"]
+                    break
+                    
+        async def image_edit_generator():
+            yield f'data: {json.dumps({"chat_id": chat_id})}\n\n'
+            
+            if not has_image or not source_image_path:
+                yield f'data: {json.dumps({"content": "**Error:** You must attach an image using the paperclip icon before using `/edit`."})}\n\n'
+                yield 'data: [DONE]\n\n'
+                return
+                
+            yield f'data: {json.dumps({"content": "### 🎨 Diffusers Img2Img Active\n\n**Booting Apple Silicon GPUs...**"})}\n\n'
+            
+            import threading
+            import queue
+            import asyncio
+            q = queue.Queue()
+            img_name = f"edit_{uuid.uuid4().hex[:8]}.png"
+            
+            def edit_thread():
+                try:
+                    import torch
+                    from diffusers import StableDiffusionImg2ImgPipeline
+                    import os
+                    from PIL import Image
+                    
+                    init_image = Image.open(source_image_path).convert("RGB")
+                    init_image = init_image.resize((512, 512)) # VRAM protection
+                    
+                    model_id = "runwayml/stable-diffusion-v1-5"
+                    pipe = StableDiffusionImg2ImgPipeline.from_pretrained(model_id, torch_dtype=torch.float16)
+                    pipe = pipe.to("mps")
+                    
+                    def cb(pipe_c, step_index, timestep, callback_kwargs):
+                        progress = int((step_index / pipe_c.num_timesteps) * 100)
+                        q.put({"progress": progress})
+                        return callback_kwargs
+                        
+                    image = pipe(prompt=prompt, image=init_image, strength=0.75, guidance_scale=7.5, callback_on_step_end=cb).images[0]
+                    img_path = f"static/images/{img_name}"
+                    image.save(img_path)
+                    
+                    markdown_img = f"![{prompt}](/images/{img_name})\n"
+                    assistant_full_reply = f"Here is your edited image:\n\n{markdown_img}"
+                    with closing(get_db_connection()) as conn:
+                        conn.execute(
+                            "INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)",
+                            (chat_id, "assistant", assistant_full_reply)
+                        )
+                        conn.commit()
+                        
+                    q.put({"image": img_name})
+                except Exception as e:
+                    q.put({"error": str(e)})
+
+            threading.Thread(target=edit_thread).start()
+            
+            def get_ascii_bar(pct, length=20):
+                filled = int((pct / 100) * length)
+                return "█" * filled + "░" * (length - filled)
+                
+            while True:
+                try:
+                    msg = q.get_nowait()
+                    if "progress" in msg:
+                        pct = msg["progress"]
+                        bar = get_ascii_bar(pct)
+                        status = f"### 🎨 Diffusers Img2Img Active\n\n**Editing image natively...**\n\n`{bar}` **{pct}%**\n\n*(Transforming matrices...)*"
+                        yield f'data: {json.dumps({"replace": status})}\n\n'
+                    elif "image" in msg:
+                        yield f'data: {json.dumps({"replace": f"![Edited Image](/images/{msg['image']})"})}\n\n'
+                        break
+                    elif "error" in msg:
+                        yield f'data: {json.dumps({"replace": f"**Error:** {msg['error']}"})}\n\n'
+                        break
+                except queue.Empty:
+                    await asyncio.sleep(0.2)
+                    
+            yield 'data: [DONE]\n\n'
+            
+        return StreamingResponse(image_edit_generator(), media_type="text/event-stream")
+    
     messages = []
-    for h in history:
-        messages.append({"role": h["role"], "content": h["content"]})
+    
+    web_context = ""
+    last_msg = history[-1]["content"] if history else ""
+    if message_content.strip().startswith("/web"):
+        query = message_content.strip()[4:].strip()
+        print(f"Triggering web search for: {query}")
+        
+        # Hack for weather queries since DDG text limits widget scraping
+        if "weather" in query.lower():
+            loc = "".join(query.lower().split("weather")[1:]).replace("in", "").replace("like", "").replace("for", "").replace("?", "").replace("right now", "").strip()
+            if loc:
+                try:
+                    import urllib.request, urllib.parse
+                    req = urllib.request.Request(f"https://wttr.in/{urllib.parse.quote(loc)}?format=3", headers={'User-Agent': 'curl'})
+                    w_res = urllib.request.urlopen(req, timeout=3).read().decode('utf-8')
+                    web_context += f"### Live Weather Widget Data ###\nLocation/Weather: {w_res.strip()}\n\n"
+                except Exception as e:
+                    print("wttr.in fail:", e)
+                    
+        try:
+            import urllib.request, urllib.parse, re
+            url = "https://html.duckduckgo.com/html/?q=" + urllib.parse.quote(query)
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.75 Safari/537.36"})
+            html = urllib.request.urlopen(req, timeout=5).read().decode("utf-8")
+            
+            snippets = re.findall(r"<a class=\"result__snippet[^>]*>(.*?)</a>", html, re.DOTALL | re.IGNORECASE)
+            
+            if snippets:
+                web_context += "### Live Web Search Context ###\n"
+                for s in snippets[:3]:
+                    clean_text = re.sub(r"<[^>]+>", "", s).strip()
+                    clean_text = clean_text.replace("&#x27;", "'").replace("&quot;", '"')
+                    web_context += f"Snippet: {clean_text}\n\n"
+        except Exception as e:
+            print(f"Web search failed: {e}")
+            
+        if not web_context:
+            web_context = "System Note: Live Web search is currently temporarily blocked or failing. Tell the user you couldn't access the live web context right now."
+    
+    for i, h in enumerate(history):
+        content = h["content"]
+        
+        # Inject RAG / Web Context into the latest user message
+        if i == len(history) - 1:
+            doc_context = ""
+            if chat_id in document_store and document_store[chat_id]:
+                try:
+                    emb_model = get_embedder()
+                    query = content.replace("/web", "").strip()
+                    query_emb = emb_model.encode([query])[0]
+                    
+                    docs = document_store[chat_id]
+                    doc_embs = [d['emb'] for d in docs]
+                    
+                    q_norm = query_emb / np.linalg.norm(query_emb)
+                    d_norms = doc_embs / np.linalg.norm(doc_embs, axis=1)[:, np.newaxis]
+                    similarities = np.dot(d_norms, q_norm)
+                    
+                    top_k = min(3, len(similarities))
+                    top_indices = np.argsort(similarities)[-top_k:][::-1]
+                    
+                    doc_context = "### Attached Document Context ###\n"
+                    for idx in top_indices:
+                        doc_context += f"- {docs[idx]['text']}\n\n"
+                except Exception as e:
+                    print(f"RAG retrieval failed: {e}")
+
+            combined_context = web_context + ("\n" if web_context and doc_context else "") + doc_context
+            if combined_context:
+                content = f"{combined_context}\nInstructions: Utilizing the context provided above, answer the following query:\n\n{content.replace('/web', '').strip()}"
+                
+        messages.append({"role": h["role"], "content": content})
     
     prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     

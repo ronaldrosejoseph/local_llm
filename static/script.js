@@ -98,9 +98,58 @@ stopBtn.addEventListener('click', stopGeneration);
 addModelBtn.addEventListener('click', addNewModel);
 modelSelect.addEventListener('change', () => switchModel(modelSelect.value));
 
+const fileUpload = document.getElementById('file-upload');
+const attachBtn = document.getElementById('attach-btn');
+const attachmentContainer = document.getElementById('attachment-pill-container');
+const attachmentName = document.getElementById('attachment-name');
+
 // Toggle sidebar on mobile
 menuToggle.addEventListener('click', toggleSidebar);
 sidebarOverlay.addEventListener('click', closeSidebar);
+
+// Document Upload Logic
+attachBtn.addEventListener('click', () => {
+    fileUpload.click();
+});
+
+fileUpload.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!currentChatId) {
+        await startNewChat(); 
+        // Need to wait until chat id generates after first message for pure alignment,
+        // but for now, generate UUID client side or force a message.
+        currentChatId = crypto.randomUUID(); // optimistic
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('chat_id', currentChatId);
+
+    // Show loading UI
+    attachmentContainer.style.display = 'block';
+    attachmentName.textContent = `Uploading ${file.name}...`;
+
+    try {
+        const res = await fetch(`${API_URL}/api/upload-document`, {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+        
+        if (data.status === 'ok') {
+            attachmentName.textContent = `${file.name} (${data.chunks} chunks)`;
+            console.log("Document processed securely.");
+            lucide.createIcons();
+        } else {
+            throw new Error(data.detail || "Upload failed");
+        }
+    } catch (err) {
+        attachmentContainer.style.display = 'none';
+        alert('Error uploading document: ' + err.message);
+    }
+});
 
 // Modal event listeners
 modalCancelBtn.addEventListener('click', hideDeleteModal);
@@ -312,8 +361,27 @@ async function sendMessage(text = null) {
                             currentChatId = data.chat_id;
                             loadChatHistory();
                         }
+                        if (data.clear) {
+                            fullContent = "";
+                            if (contentDiv) contentDiv.innerHTML = "";
+                            continue;
+                        }
+                        if (data.replace) {
+                            if (!contentDiv) {
+                                if (typingIndicator) typingIndicator.remove();
+                                assistantMessageDiv = document.createElement('div');
+                                assistantMessageDiv.className = 'message assistant';
+                                contentDiv = document.createElement('div');
+                                contentDiv.className = 'message-content';
+                                assistantMessageDiv.appendChild(contentDiv);
+                                messagesContainer.appendChild(assistantMessageDiv);
+                            }
+                            fullContent = data.replace;
+                            contentDiv.innerHTML = renderMarkdown(fullContent);
+                            continue;
+                        }
                         if (data.content) {
-                            if (fullContent === "") {
+                            if (!contentDiv) {
                                 if (typingIndicator) typingIndicator.remove();
                                 
                                 // Create assistant message bubble

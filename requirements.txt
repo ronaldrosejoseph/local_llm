@@ -1,5 +1,13 @@
+diffusers
+duckduckgo-search
 fastapi
 huggingface_hub
 mlx_lm
+mlx_vlm
+numpy
 pydantic
+PyPDF2
+python-multipart
+sentence-transformers
+torch
 uvicorn
