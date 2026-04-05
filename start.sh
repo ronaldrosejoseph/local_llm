@@ -76,3 +76,34 @@ echo $NEW_PID > "$PID_FILE"
 
 echo "Server started with PID: $NEW_PID"
 echo "Logs are being written to $LOG_FILE"
+echo ""
+echo "⏳ Waiting for server to be ready (this may take a moment while the model loads)..."
+
+# Poll the log file until uvicorn reports startup complete, or timeout after 120s
+TIMEOUT=120
+ELAPSED=0
+while [ $ELAPSED -lt $TIMEOUT ]; do
+    if ! ps -p "$NEW_PID" > /dev/null 2>&1; then
+        echo ""
+        echo "❌ Server process exited unexpectedly. Check $LOG_FILE for details."
+        exit 1
+    fi
+    if grep -q "Application startup complete" "$LOG_FILE" 2>/dev/null; then
+        break
+    fi
+    sleep 1
+    ELAPSED=$((ELAPSED + 1))
+done
+
+echo ""
+if [ $ELAPSED -ge $TIMEOUT ]; then
+    echo "⚠️  Server is taking longer than expected to start."
+    echo "   Check $LOG_FILE for details. It may still be loading the model."
+else
+    echo "✅ Server is ready!"
+fi
+
+echo ""
+echo "   🌐  Local:   http://localhost:8000"
+echo "   📄  Logs:    tail -f $LOG_FILE"
+echo ""

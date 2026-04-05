@@ -14,6 +14,7 @@ import asyncio
 from huggingface_hub import HfApi
 from contextlib import closing
 import io
+import re
 import numpy as np
 
 app = FastAPI()
@@ -111,15 +112,12 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
 
         # Sanitize filename: strip path components and non-safe characters to prevent
         # path traversal attacks (e.g. filename='../../etc/passwd')
-        import re
         raw_name = os.path.basename(file.filename or "upload")
         safe_name = re.sub(r'[^a-zA-Z0-9._-]', '_', raw_name) or "upload"
 
         # 1. Handle Vision Image Uploads
         if safe_name.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-            import os
-            if not os.path.exists("static/images"):
-                os.makedirs("static/images")
+            os.makedirs("static/images", exist_ok=True)
             img_path = f"static/images/tmp_{uuid.uuid4().hex[:8]}_{safe_name}"
             with open(img_path, "wb") as f:
                 f.write(content)
@@ -130,7 +128,11 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
             document_store[chat_id].append({"type": "image", "path": img_path})
             return {"status": "ok", "chunks": 1, "filename": file.filename}
             
-        # 2. Handle Text Docs for RAG
+        # 2. Handle Text Docs and Code Files for RAG
+        # PDFs are parsed page-by-page; everything else (plain text, all code file types:
+        # .py, .js, .ts, .go, .rs, .cpp, .java, .rb, .php, .swift, .sql, .json, .yaml,
+        # .md, .sh, .env, .toml, .ini, .cfg, .xml, .csv, .html, .css, etc.)
+        # is read as UTF-8 text and chunked for retrieval.
         text = ""
         if safe_name.lower().endswith(".pdf"):
             from PyPDF2 import PdfReader
@@ -141,9 +143,42 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
                     text += extracted + "\n"
         else:
             text = content.decode("utf-8", errors="ignore")
-            
-        chunk_size = 800
-        chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size) if len(text[i:i+chunk_size].strip()) > 50]
+
+        # Use a smaller chunk size for code files so chunks align closer to
+        # function/class boundaries rather than cutting mid-line
+        CODE_EXTENSIONS = {
+            # Web / UI
+            ".js", ".ts", ".jsx", ".tsx", ".vue", ".svelte", ".astro",
+            ".html", ".css", ".sass", ".scss", ".less",
+            # Templating
+            ".twig", ".blade", ".hbs", ".handlebars", ".ejs", ".pug", ".jade",
+            # Python
+            ".py",
+            # Systems
+            ".go", ".rs", ".cpp", ".c", ".h", ".zig", ".nim",
+            # JVM / Kotlin / Scala / Groovy
+            ".java", ".kt", ".scala", ".groovy", ".gradle",
+            # Ruby / PHP / Swift / R / Dart
+            ".rb", ".php", ".swift", ".r", ".dart",
+            # Functional
+            ".hs", ".ml", ".mli", ".fs", ".fsx", ".clj", ".cljs", ".ex", ".exs",
+            # Scripting / Shell
+            ".sh", ".bash", ".zsh", ".pl", ".pm", ".lua",
+            # Data / Config / Infra
+            ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".env",
+            ".xml", ".csv", ".sql", ".proto",
+            # GraphQL / Prisma
+            ".graphql", ".gql", ".prisma",
+            # Terraform / HCL / Nix
+            ".tf", ".tfvars", ".hcl", ".nix",
+            # Build / Meta
+            ".cmake", ".makefile", ".dockerfile", ".lock", ".diff", ".patch",
+            # Docs
+            ".md",
+        }
+        ext = os.path.splitext(safe_name.lower())[1]
+        chunk_size = 400 if ext in CODE_EXTENSIONS else 800
+        chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size) if len(text[i:i+chunk_size].strip()) > 20]
         
         if not chunks:
              return {"status": "ok", "chunks": 0}
