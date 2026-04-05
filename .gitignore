@@ -36,3 +36,11 @@ database/*.db
 .idea/
 *.swp
 *.swo
+
+# Media & Generated Images
+static/images/
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
