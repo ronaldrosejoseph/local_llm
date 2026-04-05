@@ -10,12 +10,13 @@ def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # Tables for chats and messages
+    # 1. Tables for chats and messages
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS chats (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
     
@@ -30,37 +31,66 @@ def init_db():
     )
     """)
     
-    # Table for available models
+    # 2. Table for RAG Documents (Persisting context across restarts)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS documents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        chat_id TEXT NOT NULL,
+        file_name TEXT,
+        content TEXT NOT NULL,
+        embedding BLOB,
+        type TEXT DEFAULT 'text', -- 'text' or 'image' (for VLM paths)
+        metadata TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (chat_id) REFERENCES chats (id) ON DELETE CASCADE
+    )
+    """)
+    
+    # 3. Table for available models
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS models (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE NOT NULL,
         active BOOLEAN DEFAULT 0,
         supports_vision BOOLEAN DEFAULT 0,
-        supports_image_generation BOOLEAN DEFAULT 0
+        supports_image_generation BOOLEAN DEFAULT 0,
+        is_downloaded BOOLEAN DEFAULT 0,
+        last_used TIMESTAMP
+    )
+    """)
+
+    # 4. Table for Global/User Settings
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
     
-    # Safe Migrations for existing databases
-    try:
-        cursor.execute("ALTER TABLE models ADD COLUMN supports_vision BOOLEAN DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass # Column already exists
-        
-    try:
-        cursor.execute("ALTER TABLE models ADD COLUMN supports_image_generation BOOLEAN DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass # Column already exists
+    # --- Safe Migrations for existing databases ---
+    def add_column_if_missing(table, column, definition):
+        try:
+            cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+            print(f"Added column {column} to {table}")
+        except sqlite3.OperationalError:
+            pass # already exists
+
+    add_column_if_missing("chats", "updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing("models", "supports_vision", "BOOLEAN DEFAULT 0")
+    add_column_if_missing("models", "supports_image_generation", "BOOLEAN DEFAULT 0")
+    add_column_if_missing("models", "is_downloaded", "BOOLEAN DEFAULT 0")
+    add_column_if_missing("models", "last_used", "TIMESTAMP")
     
     # Seed default model if no models exist
     cursor.execute("SELECT COUNT(*) FROM models")
     if cursor.fetchone()[0] == 0:
-        cursor.execute("INSERT INTO models (name, active, supports_vision, supports_image_generation) VALUES (?, ?, ?, ?)", 
-                       ("mlx-community/Llama-3.2-1B-Instruct-4bit", 1, 0, 0))
-        cursor.execute("INSERT INTO models (name, active, supports_vision, supports_image_generation) VALUES (?, ?, ?, ?)", 
-                       ("mlx-community/gemma-3-4b-it-4bit-DWQ", 0, 0, 0))
-        cursor.execute("INSERT INTO models (name, active, supports_vision, supports_image_generation) VALUES (?, ?, ?, ?)", 
-                       ("mlx-community/Qwen2.5-VL-7B-Instruct-4bit", 0, 1, 0))
+        cursor.execute("INSERT INTO models (name, active, supports_vision, supports_image_generation, is_downloaded) VALUES (?, ?, ?, ?, ?)", 
+                       ("mlx-community/Llama-3.2-1B-Instruct-4bit", 1, 0, 0, 1))
+        cursor.execute("INSERT INTO models (name, active, supports_vision, supports_image_generation, is_downloaded) VALUES (?, ?, ?, ?, ?)", 
+                       ("mlx-community/gemma-3-4b-it-4bit-DWQ", 0, 0, 0, 0))
+        cursor.execute("INSERT INTO models (name, active, supports_vision, supports_image_generation, is_downloaded) VALUES (?, ?, ?, ?, ?)", 
+                       ("mlx-community/Qwen2.5-VL-7B-Instruct-4bit", 0, 1, 0, 0))
     
     conn.commit()
     conn.close()

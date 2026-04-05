@@ -318,17 +318,34 @@ fileUpload.addEventListener('change', async (e) => {
             method: 'POST',
             body: formData
         });
+        
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.detail || "Upload failed");
+        }
+        
         const data = await res.json();
         
         if (data.status === 'ok') {
             attachmentName.textContent = `${file.name} (${data.chunks} chunks)`;
             console.log("Document processed securely.");
-        } else {
-            throw new Error(data.detail || "Upload failed");
+            
+            // 1. Immediately append to the chat UI
+            const msg = data.vision ? `[Attached Image: ${file.name}]` : `[Attached Document: ${file.name}]`;
+            appendMessage('user', msg);
+            
+            // 2. Hide welcome screen if this was the first action
+            welcomeScreen.style.display = 'none';
+            
+            // 3. Refresh chat history in sidebar to show the new chat if it was just created
+            loadChatHistory();
         }
     } catch (err) {
         attachmentContainer.style.display = 'none';
         alert('Error uploading document: ' + err.message);
+    } finally {
+        // Reset file input so same file can be uploaded again if needed
+        e.target.value = '';
     }
 });
 

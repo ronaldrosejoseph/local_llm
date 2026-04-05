@@ -210,6 +210,16 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
                 document_store[chat_id] = []
             # We flag this chunk as an image to bypass text RAG
             document_store[chat_id].append({"type": "image", "path": img_path})
+            
+            # Record attachment in DB so it shows up in history when switching chats
+            with closing(get_db_connection()) as conn:
+                # Ensure chat exists for this ID if this was the first action
+                if not conn.execute("SELECT id FROM chats WHERE id = ?", (chat_id,)).fetchone():
+                    conn.execute("INSERT INTO chats (id, title) VALUES (?, ?)", (chat_id, f"Image: {file.filename}"))
+                conn.execute("INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)", 
+                             (chat_id, "user", f"[Attached Image: {file.filename}]"))
+                conn.commit()
+
             return {"status": "ok", "chunks": 1, "filename": file.filename}
             
         # 2. Handle Text Docs and Code Files for RAG
@@ -224,6 +234,15 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
                     document_store[chat_id] = []
                 for p in img_paths:
                     document_store[chat_id].append({"type": "image", "path": p})
+                
+                # Record attachment in DB so it shows up in history when switching chats
+                with closing(get_db_connection()) as conn:
+                    if not conn.execute("SELECT id FROM chats WHERE id = ?", (chat_id,)).fetchone():
+                        conn.execute("INSERT INTO chats (id, title) VALUES (?, ?)", (chat_id, f"Doc: {file.filename}"))
+                    conn.execute("INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)", 
+                                 (chat_id, "user", f"[Attached Document: {file.filename}]"))
+                    conn.commit()
+
                 return {"status": "ok", "chunks": len(img_paths), "filename": file.filename, "vision": True}
 
             # FALLBACK/LLM: Extract text layer
@@ -284,13 +303,21 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
             embeddings = emb_model.encode(chunks)
             for chunk, emb in zip(chunks, embeddings):
                 document_store[chat_id].append({"type": "text", "text": chunk, "emb": emb})
-            return {"status": "ok", "chunks": len(chunks), "filename": file.filename}
         else:
             # Fallback: store text chunks without embeddings if embedder is dead
             print("Warning: Saving document chunks without embeddings (RAG offline).")
             for chunk in chunks:
                 document_store[chat_id].append({"type": "text", "text": chunk, "emb": None})
-            return {"status": "ok", "chunks": len(chunks), "filename": file.filename, "rag_active": False}
+
+        # Record attachment in DB so it shows up in history when switching chats
+        with closing(get_db_connection()) as conn:
+            if not conn.execute("SELECT id FROM chats WHERE id = ?", (chat_id,)).fetchone():
+                conn.execute("INSERT INTO chats (id, title) VALUES (?, ?)", (chat_id, f"Doc: {file.filename}"))
+            conn.execute("INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)", 
+                         (chat_id, "user", f"[Attached Document: {file.filename}]"))
+            conn.commit()
+
+        return {"status": "ok", "chunks": len(chunks), "filename": file.filename, "rag_active": emb_model is not None}
     except Exception as e:
         print(f"Error uploading doc: {e}")
         # Only crash if it's something other than a network/model load error if possible
