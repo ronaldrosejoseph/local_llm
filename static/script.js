@@ -334,10 +334,19 @@ async function sendMessage(text = null) {
     sendBtn.style.display = 'none';
     stopBtn.style.display = 'flex';
     
+    let requestChatId = currentChatId;
     abortController = new AbortController();
     
+    // Lock UI immediately for ALL generations
+    document.querySelectorAll('#chat-history, .new-chat-btn, #add-model-btn').forEach(item => {
+        item.style.pointerEvents = 'none';
+        item.style.opacity = '0.5';
+    });
+    const modelSelect = document.getElementById('model-select');
+    if (modelSelect) modelSelect.disabled = true;
+    
     try {
-        const response = await fetch(`${API_URL}/api/chat${currentChatId ? `?chat_id=${currentChatId}` : ''}`, {
+        const response = await fetch(`${API_URL}/api/chat${requestChatId ? `?chat_id=${requestChatId}` : ''}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: content }),
@@ -365,8 +374,11 @@ async function sendMessage(text = null) {
                     
                     try {
                         const data = JSON.parse(dataStr);
-                        if (data.chat_id && !currentChatId) {
-                            currentChatId = data.chat_id;
+                        if (data.chat_id && !requestChatId) {
+                            requestChatId = data.chat_id;
+                            if (!currentChatId) {
+                                currentChatId = data.chat_id;
+                            }
                             loadChatHistory();
                         }
                         if (data.clear) {
@@ -374,46 +386,35 @@ async function sendMessage(text = null) {
                             if (contentDiv) contentDiv.innerHTML = "";
                             continue;
                         }
-                        if (data.replace) {
-                            if (!contentDiv) {
-                                if (typingIndicator) typingIndicator.remove();
-                                assistantMessageDiv = document.createElement('div');
-                                assistantMessageDiv.className = 'message assistant';
-                                contentDiv = document.createElement('div');
-                                contentDiv.className = 'message-content';
-                                assistantMessageDiv.appendChild(contentDiv);
-                                messagesContainer.appendChild(assistantMessageDiv);
+                        if (data.replace || data.content) {
+                            if (data.replace) fullContent = data.replace;
+                            if (data.content) fullContent += data.content;
+                            
+                            if (currentChatId === requestChatId) {
+                                if (!contentDiv || !document.contains(contentDiv)) {
+                                    if (typingIndicator && document.contains(typingIndicator)) typingIndicator.remove();
+                                    
+                                    assistantMessageDiv = document.createElement('div');
+                                    assistantMessageDiv.className = 'message assistant';
+                                    contentDiv = document.createElement('div');
+                                    contentDiv.className = 'message-content';
+                                    assistantMessageDiv.appendChild(contentDiv);
+                                    
+                                    const actionsDiv = document.createElement('div');
+                                    actionsDiv.className = 'message-actions';
+                                    actionsDiv.style.cssText = 'margin-top: 5px; opacity: 0.5; display: flex; gap: 10px;';
+                                    actionsDiv.innerHTML = `
+                                        <button onclick="speakResponse(this.parentElement.previousElementSibling.textContent)" title="Read out loud" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="volume-2" style="width: 14px; height: 14px;"></i></button>
+                                        <button onclick="stopSpeaking()" title="Stop speaking" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="square" style="width: 14px; height: 14px;"></i></button>
+                                    `;
+                                    assistantMessageDiv.appendChild(actionsDiv);
+                                    
+                                    messagesContainer.appendChild(assistantMessageDiv);
+                                    lucide.createIcons();
+                                }
+                                contentDiv.innerHTML = renderMarkdown(fullContent);
                             }
-                            fullContent = data.replace;
-                            contentDiv.innerHTML = renderMarkdown(fullContent);
                             continue;
-                        }
-                        if (data.content) {
-                            if (!contentDiv) {
-                                if (typingIndicator) typingIndicator.remove();
-                                
-                                // Create assistant message bubble
-                                assistantMessageDiv = document.createElement('div');
-                                assistantMessageDiv.className = 'message assistant';
-                                contentDiv = document.createElement('div');
-                                contentDiv.className = 'message-content';
-                                assistantMessageDiv.appendChild(contentDiv);
-                                
-                                const actionsDiv = document.createElement('div');
-                                actionsDiv.className = 'message-actions';
-                                actionsDiv.style.cssText = 'margin-top: 5px; opacity: 0.5; display: flex; gap: 10px;';
-                                actionsDiv.innerHTML = `
-                                    <button onclick="speakResponse(this.parentElement.previousElementSibling.textContent)" title="Read out loud" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="volume-2" style="width: 14px; height: 14px;"></i></button>
-                                    <button onclick="stopSpeaking()" title="Stop speaking" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="square" style="width: 14px; height: 14px;"></i></button>
-                                `;
-                                assistantMessageDiv.appendChild(actionsDiv);
-                                
-                                messagesContainer.appendChild(assistantMessageDiv);
-                                lucide.createIcons();
-                            }
-                            fullContent += data.content;
-                            contentDiv.innerHTML = renderMarkdown(fullContent);
-                            // scrollToBottom(); // Disabled auto-scroll during generation
                         }
                     } catch (e) {
                         console.error('Error parsing stream chunk:', e);
@@ -426,7 +427,7 @@ async function sendMessage(text = null) {
         lucide.createIcons();
         
         // Auto-speak if toggled
-        if (autoSpeakToggle.checked) {
+        if (autoSpeakToggle.checked && currentChatId === requestChatId) {
             speakResponse(fullContent);
         }
         
@@ -443,6 +444,14 @@ async function sendMessage(text = null) {
         sendBtn.style.display = 'flex';
         stopBtn.style.display = 'none';
         abortController = null;
+        
+        // Release UI locks
+        document.querySelectorAll('#chat-history, .new-chat-btn, #add-model-btn').forEach(item => {
+            item.style.pointerEvents = 'auto';
+            item.style.opacity = '1';
+        });
+        const modelSelect = document.getElementById('model-select');
+        if (modelSelect) modelSelect.disabled = false;
     }
 }
 
