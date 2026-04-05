@@ -96,6 +96,7 @@ marked.use({
 document.addEventListener('DOMContentLoaded', () => {
     loadChatHistory();
     loadModels();
+    loadConfig();
 });
 
 // Event Listeners
@@ -131,6 +132,162 @@ const attachmentName = document.getElementById('attachment-name');
 // Toggle sidebar on mobile
 menuToggle.addEventListener('click', toggleSidebar);
 sidebarOverlay.addEventListener('click', closeSidebar);
+
+// --- Settings Modal ---
+const settingsModal    = document.getElementById('settings-modal');
+const settingsOpenBtn  = document.getElementById('settings-open-btn');
+const settingsCloseBtn = document.getElementById('settings-close-btn');
+
+function openSettings() {
+    loadSettingsModels();   // refresh model list each time
+    settingsModal.style.display = 'flex';
+    setTimeout(() => settingsModal.classList.add('active'), 10);
+}
+
+function closeSettings() {
+    settingsModal.classList.remove('active');
+    setTimeout(() => settingsModal.style.display = 'none', 300);
+}
+
+settingsOpenBtn.addEventListener('click', openSettings);
+settingsCloseBtn.addEventListener('click', closeSettings);
+settingsModal.addEventListener('click', (e) => {
+    if (e.target === settingsModal) closeSettings();
+});
+
+// --- Config (Generation Settings) ---
+
+async function loadConfig() {
+    try {
+        const res = await fetch(`${API_URL}/api/config`);
+        if (!res.ok) return;
+        const cfg = await res.json();
+        applyConfigToUI(cfg);
+    } catch (err) {
+        console.error('Failed to load config:', err);
+    }
+}
+
+function applyConfigToUI(cfg) {
+    const set = (id, valId, val) => {
+        const el = document.getElementById(id);
+        const valEl = document.getElementById(valId);
+        if (el) el.value = val;
+        if (valEl) valEl.textContent = val;
+    };
+    set('cfg-max-tokens',  'val-max-tokens',  cfg.max_tokens);
+    set('cfg-temperature', 'val-temperature', cfg.temperature);
+    set('cfg-top-p',       'val-top-p',       cfg.top_p);
+    set('cfg-rep-penalty', 'val-rep-penalty', cfg.repetition_penalty);
+}
+
+// Debounced PATCH so we don't spam the server on every slider tick
+let _configSaveTimer = null;
+function scheduleConfigSave(patch) {
+    clearTimeout(_configSaveTimer);
+    _configSaveTimer = setTimeout(async () => {
+        try {
+            const res = await fetch(`${API_URL}/api/config`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(patch),
+            });
+            const cfg = await res.json();
+            applyConfigToUI(cfg);
+        } catch (err) {
+            console.error('Failed to save config:', err);
+        }
+    }, 300);
+}
+
+// Wire each slider
+document.getElementById('cfg-max-tokens').addEventListener('input', function() {
+    document.getElementById('val-max-tokens').textContent = this.value;
+    scheduleConfigSave({ max_tokens: parseInt(this.value) });
+});
+document.getElementById('cfg-temperature').addEventListener('input', function() {
+    document.getElementById('val-temperature').textContent = parseFloat(this.value).toFixed(2);
+    scheduleConfigSave({ temperature: parseFloat(this.value) });
+});
+document.getElementById('cfg-top-p').addEventListener('input', function() {
+    document.getElementById('val-top-p').textContent = parseFloat(this.value).toFixed(2);
+    scheduleConfigSave({ top_p: parseFloat(this.value) });
+});
+document.getElementById('cfg-rep-penalty').addEventListener('input', function() {
+    document.getElementById('val-rep-penalty').textContent = parseFloat(this.value).toFixed(2);
+    scheduleConfigSave({ repetition_penalty: parseFloat(this.value) });
+});
+
+// --- Settings: Model Library ---
+
+async function loadSettingsModels() {
+    const list = document.getElementById('settings-models-list');
+    list.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">Loading...</p>';
+    try {
+        const res = await fetch(`${API_URL}/api/models`);
+        if (!res.ok) throw new Error('Failed to load models');
+        const models = await res.json();
+
+        list.innerHTML = '';
+        if (!models.length) {
+            list.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">No models added yet.</p>';
+            return;
+        }
+
+        models.forEach(m => {
+            const parts = m.name.split('/');
+            const org   = parts[0] || '';
+            const name  = parts[1] || m.name;
+
+            const item = document.createElement('div');
+            item.className = 'settings-model-item';
+
+            item.innerHTML = `
+                <div class="settings-model-info">
+                    <span class="settings-model-name" title="${m.name}">${name}</span>
+                    <span class="settings-model-org">${org}</span>
+                </div>
+                ${m.active ? '<span class="settings-model-active-badge">Active</span>' : ''}
+                <button class="delete-model-btn" title="Delete model" ${m.active ? 'disabled' : ''}>
+                    <i data-lucide="trash-2"></i>
+                </button>
+            `;
+
+            const btn = item.querySelector('.delete-model-btn');
+            if (!m.active) {
+                btn.addEventListener('click', () => confirmDeleteModel(m.name, btn));
+            }
+
+            list.appendChild(item);
+        });
+        lucide.createIcons({ elements: Array.from(list.querySelectorAll('[data-lucide]')) });
+    } catch (err) {
+        list.innerHTML = `<p style="color:#ff5555;font-size:13px;">Error: ${err.message}</p>`;
+    }
+}
+
+async function confirmDeleteModel(modelName, btn) {
+    const shortName = modelName.split('/').pop();
+    if (!confirm(`Delete "${shortName}"?\n\nThis will remove it from the list AND delete it from disk.`)) return;
+
+    btn.disabled = true;
+    btn.innerHTML = '<i data-lucide="loader"></i>';
+    lucide.createIcons({ elements: [btn.querySelector('[data-lucide]')] });
+
+    try {
+        const res = await fetch(`${API_URL}/api/models/${encodeURIComponent(modelName)}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Delete failed');
+
+        // Refresh both the sidebar model select and the settings list
+        await loadModels();
+        await loadSettingsModels();
+    } catch (err) {
+        alert(`Failed to delete model: ${err.message}`);
+        btn.disabled = false;
+        lucide.createIcons({ elements: [btn.querySelector('[data-lucide]')] });
+    }
+}
 
 // Document Upload Logic
 attachBtn.addEventListener('click', () => {
@@ -353,6 +510,9 @@ async function sendMessage(text = null) {
     }
     
     const typingIndicator = appendTypingIndicator();
+    // A new message always snaps to the bottom; reset the user-scroll flag so
+    // the typing indicator and first tokens are visible.
+    _userScrolledUp = false;
     scrollToBottom();
     
     // Toggle buttons
@@ -542,8 +702,24 @@ function appendTypingIndicator() {
     return div;
 }
 
-function scrollToBottom() {
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+// Track whether the user has manually scrolled away from the bottom.
+// Auto-scroll only fires when they are already near the bottom, so
+// reading mid-response won't get interrupted.
+let _userScrolledUp = false;
+
+messagesContainer.addEventListener('scroll', () => {
+    const distanceFromBottom =
+        messagesContainer.scrollHeight -
+        messagesContainer.scrollTop -
+        messagesContainer.clientHeight;
+    // Consider "at bottom" if within 150px (handles rounding & small bounces)
+    _userScrolledUp = distanceFromBottom > 150;
+}, { passive: true });
+
+function scrollToBottom(force = false) {
+    if (force || !_userScrolledUp) {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
 }
 
 // --- Voice and Audio Functions ---
@@ -667,38 +843,72 @@ async function addNewModel() {
 }
 
 async function switchModel(modelName) {
-    // UI Feedback for switching
     sendBtn.disabled = true;
     chatInput.disabled = true;
     const originalBadgeText = modelBadge.textContent;
-    modelBadge.textContent = "Loading...";
-    modelBadge.style.opacity = "0.5";
-    
+
+    // Animate the badge to show activity
+    const setBadge = (text, pulse = true) => {
+        modelBadge.textContent = text;
+        modelBadge.style.opacity = pulse ? '0.6' : '1';
+        modelBadge.style.fontStyle = pulse ? 'italic' : 'normal';
+    };
+
+    setBadge('Checking...');
+
     try {
         const response = await fetch(`${API_URL}/api/models/active`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: modelName })
         });
-        
-        if (response.ok) {
-            const data = await response.json();
-            modelBadge.textContent = data.current_model.split('/').pop();
-            modelBadge.style.opacity = "1";
-            console.log(`Switched to ${data.current_model}`);
-        } else {
-            const data = await response.json();
-            alert(data.detail || "Error switching model");
-            modelBadge.textContent = originalBadgeText;
-            modelBadge.style.opacity = "1";
+
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            alert(data.detail || 'Error switching model');
+            setBadge(originalBadgeText, false);
+            return;
+        }
+
+        // Consume the SSE progress stream
+        const reader  = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        outer: while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const lines = decoder.decode(value).split('\n');
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                const raw = line.slice(6).trim();
+                if (raw === '[DONE]') break outer;
+
+                try {
+                    const data = JSON.parse(raw);
+                    if (data.status === 'downloading') {
+                        setBadge(data.message || 'Downloading...');
+                    } else if (data.status === 'loading') {
+                        setBadge(data.message || 'Loading...');
+                    } else if (data.status === 'ready') {
+                        setBadge(data.model, false);
+                        console.log(`Switched to ${data.full}`);
+                        // Refresh the sidebar dropdown to highlight the new active model
+                        await loadModels();
+                    } else if (data.status === 'error') {
+                        alert(data.message || 'Error loading model');
+                        setBadge(originalBadgeText, false);
+                    }
+                } catch (_) {}
+            }
         }
     } catch (error) {
         console.error('Error switching model:', error);
-        modelBadge.textContent = originalBadgeText;
-        modelBadge.style.opacity = "1";
+        setBadge(originalBadgeText, false);
     } finally {
         sendBtn.disabled = false;
         chatInput.disabled = false;
+        modelBadge.style.fontStyle = 'normal';
     }
 }
 

@@ -42,6 +42,10 @@
                         <i data-lucide="plus-circle"></i>
                     </button>
                 </div>
+                <button class="settings-open-btn" id="settings-open-btn" title="Settings">
+                    <i data-lucide="settings"></i>
+                    <span>Settings</span>
+                </button>
             </div>
         </aside>
 
@@ -55,7 +59,7 @@
                     <i data-lucide="menu"></i>
                 </button>
                 <div class="model-info">
-                    <span class="model-badge">Gemma 3 4B</span>
+                    <span class="model-badge">LLM</span>
                     <span id="current-chat-title">New Conversation</span>
                 </div>
             </header>
@@ -71,20 +75,24 @@
 
             <footer class="chat-input-area">
                 <div id="attachment-pill-container" style="display:none; padding-bottom:10px;">
-                    <span style="display: inline-flex; align-items: center; background: rgba(85,170,255,0.2); color: #55aaff; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600;">
+                    <span
+                        style="display: inline-flex; align-items: center; background: rgba(85,170,255,0.2); color: #55aaff; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600;">
                         <i data-lucide="file-text" style="width: 14px; height: 14px; margin-right: 6px;"></i>
                         <span id="attachment-name">doc.pdf</span>
                     </span>
                 </div>
                 <div class="input-wrapper">
-                    <input type="file" id="file-upload" accept=".txt,.pdf,.png,.jpg,.jpeg,.webp,.py,.js,.ts,.jsx,.tsx,.html,.css,.json,.yaml,.yml,.md,.sh,.bash,.zsh,.env,.toml,.ini,.cfg,.xml,.csv,.sql,.go,.rs,.cpp,.c,.h,.java,.kt,.rb,.php,.swift,.r,.sass,.scss,.less,.vue,.svelte,.astro,.twig,.blade,.hbs,.handlebars,.ejs,.pug,.jade,.graphql,.gql,.prisma,.proto,.lua,.dart,.ex,.exs,.hs,.pl,.pm,.clj,.cljs,.nim,.zig,.tf,.tfvars,.hcl,.nix,.ml,.mli,.fs,.fsx,.scala,.groovy,.gradle,.cmake,.makefile,.dockerfile,.lock,.diff,.patch" style="display: none;">
-                    <button class="attach-btn" id="attach-btn" title="Attach Document or Image" style="background: transparent; border: none; cursor: pointer; padding: 10px; border-radius: 50%; color: var(--text-muted); transition: all 0.2s; display: flex; align-items: center; justify-content: center;">
+                    <input type="file" id="file-upload"
+                        accept=".txt,.pdf,.png,.jpg,.jpeg,.webp,.py,.js,.ts,.jsx,.tsx,.html,.css,.json,.yaml,.yml,.md,.sh,.bash,.zsh,.env,.toml,.ini,.cfg,.xml,.csv,.sql,.go,.rs,.cpp,.c,.h,.java,.kt,.rb,.php,.swift,.r,.sass,.scss,.less,.vue,.svelte,.astro,.twig,.blade,.hbs,.handlebars,.ejs,.pug,.jade,.graphql,.gql,.prisma,.proto,.lua,.dart,.ex,.exs,.hs,.pl,.pm,.clj,.cljs,.nim,.zig,.tf,.tfvars,.hcl,.nix,.ml,.mli,.fs,.fsx,.scala,.groovy,.gradle,.cmake,.makefile,.dockerfile,.lock,.diff,.patch"
+                        style="display: none;">
+                    <button class="attach-btn" id="attach-btn" title="Attach Document or Image"
+                        style="background: transparent; border: none; cursor: pointer; padding: 10px; border-radius: 50%; color: var(--text-muted); transition: all 0.2s; display: flex; align-items: center; justify-content: center;">
                         <i data-lucide="paperclip"></i>
                     </button>
                     <button class="voice-btn" id="voice-btn" title="Speak to chat">
                         <i data-lucide="mic"></i>
                     </button>
-                    <textarea id="chat-input" placeholder="Message Gemma..." rows="1"></textarea>
+                    <textarea id="chat-input" placeholder="Message llm..." rows="1"></textarea>
                     <button class="send-btn" id="send-btn">
                         <i data-lucide="arrow-up"></i>
                     </button>
@@ -115,6 +123,75 @@
             </div>
         </div>
     </div>
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal-overlay">
+        <div class="settings-card">
+            <div class="settings-header">
+                <div style="display:flex;align-items:center;gap:12px;">
+                    <i data-lucide="settings" style="width:22px;height:22px;color:var(--accent-color);"></i>
+                    <h2>Settings</h2>
+                </div>
+                <button class="settings-close-btn" id="settings-close-btn" title="Close">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+
+            <!-- Generation Parameters -->
+            <div class="settings-section">
+                <h3 class="settings-section-title">⚡ Generation</h3>
+
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <span>Max Tokens</span>
+                        <span class="setting-value" id="val-max-tokens">8192</span>
+                    </div>
+                    <input type="range" class="setting-slider" id="cfg-max-tokens" min="256" max="32768" step="256"
+                        value="8192">
+                    <div class="setting-hints"><span>256</span><span>32 768</span></div>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <span>Temperature</span>
+                        <span class="setting-value" id="val-temperature">0.7</span>
+                    </div>
+                    <input type="range" class="setting-slider" id="cfg-temperature" min="0" max="2" step="0.05"
+                        value="0.7">
+                    <div class="setting-hints"><span>Deterministic</span><span>Creative</span></div>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <span>Top P</span>
+                        <span class="setting-value" id="val-top-p">0.9</span>
+                    </div>
+                    <input type="range" class="setting-slider" id="cfg-top-p" min="0" max="1" step="0.05" value="0.9">
+                    <div class="setting-hints"><span>0</span><span>1.0</span></div>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <span>Repetition Penalty</span>
+                        <span class="setting-value" id="val-rep-penalty">1.1</span>
+                    </div>
+                    <input type="range" class="setting-slider" id="cfg-rep-penalty" min="1" max="1.5" step="0.05"
+                        value="1.1">
+                    <div class="setting-hints"><span>None</span><span>Strong</span></div>
+                </div>
+            </div>
+
+            <!-- Model Library -->
+            <div class="settings-section">
+                <h3 class="settings-section-title">🤖 Model Library</h3>
+                <p class="settings-section-desc">Deleting a model removes it from the list <strong>and</strong> from
+                    disk (<code>~/.cache/huggingface/hub/</code>). The active model cannot be deleted.</p>
+                <div id="settings-models-list" class="settings-models-list">
+                    <!-- injected by JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="script.js"></script>
 </body>
 

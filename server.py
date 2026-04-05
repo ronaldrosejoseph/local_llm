@@ -2,6 +2,7 @@ import os
 import uuid
 import sqlite3
 import subprocess
+import shutil
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -9,8 +10,11 @@ from pydantic import BaseModel
 from typing import List, Optional
 import mlx_lm
 from mlx_lm import load, generate, stream_generate
+from mlx_lm.sample_utils import make_sampler, make_repetition_penalty
 import json
 import asyncio
+import queue
+import threading
 from huggingface_hub import HfApi
 from contextlib import closing
 import io
@@ -26,6 +30,30 @@ model = None
 tokenizer = None
 DB_PATH = "database/chats.db"
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB hard limit to prevent OOM on large uploads
+
+# --- Config Management ---
+CONFIG_PATH = "config.json"
+DEFAULT_CONFIG = {
+    "max_tokens": 8192,
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "repetition_penalty": 1.1,
+}
+
+def load_config() -> dict:
+    """Load config from disk, falling back to defaults for any missing keys."""
+    if os.path.exists(CONFIG_PATH):
+        try:
+            with open(CONFIG_PATH, "r") as f:
+                data = json.load(f)
+            return {**DEFAULT_CONFIG, **data}
+        except Exception:
+            pass
+    return dict(DEFAULT_CONFIG)
+
+def save_config(cfg: dict):
+    with open(CONFIG_PATH, "w") as f:
+        json.dump(cfg, f, indent=2)
 
 # Track 'say' subprocesses explicitly to prevent pkill hijacking
 say_processes = set()
@@ -86,6 +114,12 @@ class ChatResponse(BaseModel):
 
 class SayRequest(BaseModel):
     text: str
+
+class ConfigUpdate(BaseModel):
+    max_tokens: Optional[int] = None
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
+    repetition_penalty: Optional[float] = None
 
 @app.get("/api/chats")
 def get_chats():
@@ -522,8 +556,19 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
         
         full_response = ""
         try:
-            # 5. Generate response tokens streaming
-            for response in stream_generate(model, tokenizer, prompt=prompt, max_tokens=8192):
+            # 5. Generate response tokens streaming — use values from config
+            cfg = load_config()
+            sampler = make_sampler(temp=cfg["temperature"], top_p=cfg["top_p"])
+            logits_processors = [
+                make_repetition_penalty(penalty=cfg["repetition_penalty"])
+            ] if cfg["repetition_penalty"] > 1.0 else None
+            for response in stream_generate(
+                model, tokenizer,
+                prompt=prompt,
+                max_tokens=cfg["max_tokens"],
+                sampler=sampler,
+                logits_processors=logits_processors,
+            ):
                 full_response += response.text
                 yield f"data: {json.dumps({'content': response.text})}\n\n"
                 await asyncio.sleep(0) # Yield control
@@ -591,6 +636,26 @@ def delete_chat(chat_id: str):
         conn.commit()
     return {"status": "ok"}
 
+# --- Config API ---
+
+@app.get("/api/config")
+def get_config():
+    return load_config()
+
+@app.patch("/api/config")
+def update_config(data: ConfigUpdate):
+    cfg = load_config()
+    if data.max_tokens is not None:
+        cfg["max_tokens"] = max(256, min(32768, int(data.max_tokens)))
+    if data.temperature is not None:
+        cfg["temperature"] = round(max(0.0, min(2.0, data.temperature)), 2)
+    if data.top_p is not None:
+        cfg["top_p"] = round(max(0.0, min(1.0, data.top_p)), 2)
+    if data.repetition_penalty is not None:
+        cfg["repetition_penalty"] = round(max(1.0, min(1.5, data.repetition_penalty)), 2)
+    save_config(cfg)
+    return cfg
+
 # --- Model APIs ---
 
 class ModelAdd(BaseModel):
@@ -623,35 +688,138 @@ def add_model(model_data: ModelAdd):
     return {"status": "ok"}
 
 @app.post("/api/models/active")
-def set_active_model(model_data: ModelAdd):
+async def set_active_model(model_data: ModelAdd):
+    """SSE stream that reports download/load progress while switching models."""
     global model, tokenizer, MODEL_NAME
-    
+    prev_model_name = MODEL_NAME
+
+    # Verify model exists in DB first
     with closing(get_db_connection()) as conn:
-        # Check if model exists
         row = conn.execute("SELECT name FROM models WHERE name = ?", (model_data.name,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Model not found")
-        
-        # Update active status in DB
-        conn.execute("UPDATE models SET active = 0")
-        conn.execute("UPDATE models SET active = 1 WHERE name = ?", (model_data.name,))
+
+    # Detect cache state BEFORE starting the load thread.
+    # HF stores blobs in: ~/.cache/huggingface/hub/models--{org}--{name}/blobs/
+    safe      = model_data.name.replace("/", "--")
+    cache_dir = os.path.join(os.path.expanduser("~/.cache/huggingface/hub"), f"models--{safe}")
+    blobs_dir = os.path.join(cache_dir, "blobs")
+    snapshots_dir = os.path.join(cache_dir, "snapshots")
+    is_cached = os.path.isdir(snapshots_dir)
+
+    result_q: queue.Queue = queue.Queue()
+
+    def load_thread():
+        global model, tokenizer, MODEL_NAME
+        try:
+            # Update DB active flag
+            with closing(get_db_connection()) as conn:
+                conn.execute("UPDATE models SET active = 0")
+                conn.execute("UPDATE models SET active = 1 WHERE name = ?", (model_data.name,))
+                conn.commit()
+            new_model, new_tok = load(model_data.name)
+            model     = new_model
+            tokenizer = new_tok
+            MODEL_NAME = model_data.name
+            result_q.put({"status": "ready", "model": model_data.name.split("/")[-1], "full": model_data.name})
+        except Exception as e:
+            # Restore previous active model in DB
+            try:
+                with closing(get_db_connection()) as conn:
+                    conn.execute("UPDATE models SET active = 0")
+                    if prev_model_name:
+                        conn.execute("UPDATE models SET active = 1 WHERE name = ?", (prev_model_name,))
+                    conn.commit()
+            except Exception:
+                pass
+            result_q.put({"status": "error", "message": str(e)})
+
+    threading.Thread(target=load_thread, daemon=True).start()
+
+    async def status_stream():
+        loading_notified = is_cached
+
+        if is_cached:
+            yield f"data: {json.dumps({'status': 'loading', 'message': 'Loading model into memory...'})}\n\n"
+        else:
+            yield f"data: {json.dumps({'status': 'downloading', 'message': 'Downloading model files...'})}\n\n"
+
+        while True:
+            # Check if the load thread finished
+            try:
+                msg = result_q.get_nowait()
+                yield f"data: {json.dumps(msg)}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+            except queue.Empty:
+                pass
+
+            if not loading_notified:
+                # Report download progress by counting blobs
+                try:
+                    if os.path.isdir(blobs_dir):
+                        all_blobs   = [f for f in os.listdir(blobs_dir) if not f.endswith('.lock')]
+                        incomplete  = [f for f in all_blobs if f.endswith('.incomplete')]
+                        complete    = len(all_blobs) - len(incomplete)
+                        total       = len(all_blobs)
+                        if total > 0:
+                            progress_msg = f"Downloading... ({complete}/{total} files)"
+                            yield f"data: {json.dumps({'status': 'downloading', 'message': progress_msg})}\n\n"
+                        # Transition to "loading" once no incomplete files remain
+                        if total > 0 and len(incomplete) == 0:
+                            loading_notified = True
+                            yield f"data: {json.dumps({'status': 'loading', 'message': 'Loading model into memory...'})}\n\n"
+                except Exception:
+                    pass
+
+            await asyncio.sleep(0.8)
+
+    return StreamingResponse(status_stream(), media_type="text/event-stream")
+
+
+@app.delete("/api/models/{model_name:path}")
+def delete_model(model_name: str):
+    global MODEL_NAME
+
+    # Refuse to delete the currently loaded model
+    if model_name == MODEL_NAME:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete the active model. Switch to another model first."
+        )
+
+    # Remove from DB
+    with closing(get_db_connection()) as conn:
+        row = conn.execute("SELECT name FROM models WHERE name = ?", (model_name,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Model not found in database.")
+        conn.execute("DELETE FROM models WHERE name = ?", (model_name,))
         conn.commit()
-    
-    # Reload model
-    print(f"Switching to model {model_data.name}...")
-    try:
-        # Re-load model (this unloads the previous one automatically by reassignment)
-        new_model, new_tokenizer = load(model_data.name)
-        model = new_model
-        tokenizer = new_tokenizer
-        MODEL_NAME = model_data.name
-        print(f"Switched to {MODEL_NAME}")
-        return {"status": "ok", "current_model": MODEL_NAME}
-    except Exception as e:
-        print(f"Failed to switch model: {e}")
-        # Try to restore the previous or default model
-        load_active_model()
-        raise HTTPException(status_code=500, detail=f"Failed to load model: {str(e)}")
+
+    # Delete from HuggingFace hub cache.
+    # HF stores repos as: ~/.cache/huggingface/hub/models--{org}--{model}
+    # where every '/' in the repo name is replaced by '--'.
+    hf_cache = os.path.expanduser("~/.cache/huggingface/hub")
+    safe_name = model_name.replace("/", "--")
+    cache_dir = os.path.join(hf_cache, f"models--{safe_name}")
+
+    deleted_from_disk = False
+    if os.path.isdir(cache_dir):
+        try:
+            shutil.rmtree(cache_dir)
+            deleted_from_disk = True
+            print(f"Deleted model cache: {cache_dir}")
+        except Exception as e:
+            print(f"Warning: could not delete cache at {cache_dir}: {e}")
+    else:
+        print(f"No cache dir found at {cache_dir} — only removed from DB.")
+
+    return {
+        "status": "ok",
+        "model": model_name,
+        "deleted_from_disk": deleted_from_disk,
+        "cache_path": cache_dir,
+    }
 
 # Serve static files
 if not os.path.exists("static"):
