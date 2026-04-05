@@ -2,9 +2,11 @@ fastapi
 uvicorn
 pydantic
 mlx_lm
+mlx_vlm
 huggingface_hub
 sentence-transformers
 PyPDF2
+pymupdf
 python-multipart
 numpy
 mflux

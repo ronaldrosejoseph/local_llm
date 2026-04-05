@@ -11,6 +11,10 @@ from typing import List, Optional
 import mlx_lm
 from mlx_lm import load, generate, stream_generate
 from mlx_lm.sample_utils import make_sampler, make_repetition_penalty
+import mlx_vlm
+from mlx_vlm.utils import load_config as load_vlm_config
+from mlx_vlm.prompt_utils import apply_chat_template as apply_vlm_template
+from mlx_vlm import stream_generate as stream_vlm_generate
 import json
 import asyncio
 import queue
@@ -28,6 +32,8 @@ DEFAULT_MODEL = "mlx-community/Llama-3.2-1B-Instruct-4bit"
 MODEL_NAME = None
 model = None
 tokenizer = None
+processor = None # For VLM models
+IS_VLM = False   # Flag if model is vision-based
 DB_PATH = "database/chats.db"
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB hard limit to prevent OOM on large uploads
 
@@ -64,9 +70,37 @@ document_store = {} # mapping chat_id -> lists of dicts {"text": chunk, "emb": v
 def get_embedder():
     global embedder_model
     if embedder_model is None:
-        from sentence_transformers import SentenceTransformer
-        embedder_model = SentenceTransformer("all-MiniLM-L6-v2")
+        try:
+            from sentence_transformers import SentenceTransformer
+            # Set local_files_only=False allows fallback to cache if offline
+            embedder_model = SentenceTransformer("all-MiniLM-L6-v2")
+            print("Embedder model loaded successfully.")
+        except Exception as e:
+            print(f"CRITICAL: Failed to load embedder model: {e}")
+            # Do not set embedder_model to anything so we can retry later
+            return None
     return embedder_model
+
+def pdf_to_images(pdf_content: bytes, chat_id: str):
+    """Converts PDF pages to images for Vision model consumption."""
+    import fitz # PyMuPDF
+    import uuid
+    
+    os.makedirs("static/images", exist_ok=True)
+    doc = fitz.open(stream=pdf_content, filetype="pdf")
+    image_paths = []
+    
+    # Limit to first 5 pages for VRAM safety/latency
+    for i in range(min(5, len(doc))):
+        page = doc.load_page(i)
+        pix = page.get_pixmap(matrix=fitz.Matrix(2, 2)) # 2x zoom for clarity
+        img_name = f"pdf_{chat_id[:8]}_{i}_{uuid.uuid4().hex[:6]}.png"
+        img_path = f"static/images/{img_name}"
+        pix.save(img_path)
+        image_paths.append(img_path)
+        
+    doc.close()
+    return image_paths
 
 # Database helper functions
 def get_db_connection():
@@ -75,28 +109,44 @@ def get_db_connection():
     return conn
 
 # Model loading logic
-def load_active_model():
-    global MODEL_NAME, model, tokenizer
-    with closing(get_db_connection()) as conn:
-        row = conn.execute("SELECT name FROM models WHERE active = 1").fetchone()
+def load_active_model(override_name: str = None):
+    global MODEL_NAME, model, tokenizer, processor, IS_VLM
     
-    if not row:
-        # Fallback to default if no active model is set
-        MODEL_NAME = DEFAULT_MODEL
+    if override_name:
+        MODEL_NAME = override_name
     else:
-        MODEL_NAME = row["name"]
+        with closing(get_db_connection()) as conn:
+            row = conn.execute("SELECT name FROM models WHERE active = 1").fetchone()
+        
+        if not row:
+            MODEL_NAME = DEFAULT_MODEL
+        else:
+            MODEL_NAME = row["name"]
         
     print(f"Loading model {MODEL_NAME}...")
+    
+    # Detect if model is Vision-based (contains 'vl' or 'internvl' etc.)
+    IS_VLM = any(x in MODEL_NAME.lower() for x in ["-vl", "vision", "internvl", "molmo"])
+    
     try:
-        model, tokenizer = load(MODEL_NAME)
-        print(f"Model {MODEL_NAME} loaded successfully.")
+        if IS_VLM:
+            print(f"Vision model detected. Loading via mlx_vlm...")
+            model, processor = mlx_vlm.load(MODEL_NAME)
+            tokenizer        = processor.tokenizer # align for shared code
+        else:
+            model, tokenizer = load(MODEL_NAME)
+            processor = None
+            
+        print(f"Model {MODEL_NAME} loaded successfully (VLM: {IS_VLM}).")
     except Exception as e:
         print(f"Error loading model {MODEL_NAME}: {e}")
         # If the active model fails, try to load the default
         if MODEL_NAME != DEFAULT_MODEL:
-            MODEL_NAME = DEFAULT_MODEL
-            print(f"Falling back to default model: {MODEL_NAME}")
-            model, tokenizer = load(MODEL_NAME)
+            print(f"Falling back to default model: {DEFAULT_MODEL}")
+            load_active_model(override_name=DEFAULT_MODEL) # Pass fallback name
+        else:
+            print("CRITICAL: Both active and default models failed to load. Server will be non-functional.")
+            model, tokenizer, processor = None, None, None
 
 # Initial load at startup
 load_active_model()
@@ -163,12 +213,20 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
             return {"status": "ok", "chunks": 1, "filename": file.filename}
             
         # 2. Handle Text Docs and Code Files for RAG
-        # PDFs are parsed page-by-page; everything else (plain text, all code file types:
-        # .py, .js, .ts, .go, .rs, .cpp, .java, .rb, .php, .swift, .sql, .json, .yaml,
-        # .md, .sh, .env, .toml, .ini, .cfg, .xml, .csv, .html, .css, etc.)
-        # is read as UTF-8 text and chunked for retrieval.
+        # PDFs are parsed page-by-page; everything else is read as UTF-8
         text = ""
         if safe_name.lower().endswith(".pdf"):
+            # IF VLM IS ACTIVE: Render PDF as images for visual OCR
+            if IS_VLM:
+                print("Vision model active: converting PDF to images...")
+                img_paths = pdf_to_images(content, chat_id)
+                if chat_id not in document_store:
+                    document_store[chat_id] = []
+                for p in img_paths:
+                    document_store[chat_id].append({"type": "image", "path": p})
+                return {"status": "ok", "chunks": len(img_paths), "filename": file.filename, "vision": True}
+
+            # FALLBACK/LLM: Extract text layer
             from PyPDF2 import PdfReader
             pdf = PdfReader(io.BytesIO(content))
             for page in pdf.pages:
@@ -217,18 +275,26 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
         if not chunks:
              return {"status": "ok", "chunks": 0}
              
-        model = get_embedder()
-        embeddings = model.encode(chunks)
+        emb_model = get_embedder()
         
         if chat_id not in document_store:
             document_store[chat_id] = []
-            
-        for chunk, emb in zip(chunks, embeddings):
-            document_store[chat_id].append({"type": "text", "text": chunk, "emb": emb})
-            
-        return {"status": "ok", "chunks": len(chunks), "filename": file.filename}
+
+        if emb_model:
+            embeddings = emb_model.encode(chunks)
+            for chunk, emb in zip(chunks, embeddings):
+                document_store[chat_id].append({"type": "text", "text": chunk, "emb": emb})
+            return {"status": "ok", "chunks": len(chunks), "filename": file.filename}
+        else:
+            # Fallback: store text chunks without embeddings if embedder is dead
+            print("Warning: Saving document chunks without embeddings (RAG offline).")
+            for chunk in chunks:
+                document_store[chat_id].append({"type": "text", "text": chunk, "emb": None})
+            return {"status": "ok", "chunks": len(chunks), "filename": file.filename, "rag_active": False}
     except Exception as e:
         print(f"Error uploading doc: {e}")
+        # Only crash if it's something other than a network/model load error if possible
+        # but 500 is safer than letting the server hang
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/chat")
@@ -523,24 +589,30 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
             if chat_id in document_store and document_store[chat_id]:
                 try:
                     emb_model = get_embedder()
+                    if not emb_model:
+                        raise Exception("Embedder model not available.")
+                        
                     query = content.replace("/web", "").strip()
                     query_emb = emb_model.encode([query])[0]
                     
-                    docs = document_store[chat_id]
-                    doc_embs = [d['emb'] for d in docs]
-                    
-                    q_norm = query_emb / np.linalg.norm(query_emb)
-                    d_norms = doc_embs / np.linalg.norm(doc_embs, axis=1)[:, np.newaxis]
-                    similarities = np.dot(d_norms, q_norm)
-                    
-                    top_k = min(3, len(similarities))
-                    top_indices = np.argsort(similarities)[-top_k:][::-1]
-                    
-                    doc_context = "### Attached Document Context ###\n"
-                    for idx in top_indices:
-                        doc_context += f"- {docs[idx]['text']}\n\n"
+                    docs = [d for d in document_store[chat_id] if d.get("emb") is not None]
+                    if docs:
+                        doc_embs = [d['emb'] for d in docs]
+                        
+                        q_norm = query_emb / np.linalg.norm(query_emb)
+                        d_norms = doc_embs / np.linalg.norm(doc_embs, axis=1)[:, np.newaxis]
+                        similarities = np.dot(d_norms, q_norm)
+                        
+                        top_k = min(3, len(similarities))
+                        top_indices = np.argsort(similarities)[-top_k:][::-1]
+                        
+                        doc_context = "### Attached Document Context ###\n"
+                        for idx in top_indices:
+                            doc_context += f"- {docs[idx]['text']}\n\n"
+                    else:
+                        print("RAG: No indexable documents found for this chat.")
                 except Exception as e:
-                    print(f"RAG retrieval failed: {e}")
+                    print(f"RAG retrieval skipped: {e}")
 
             combined_context = web_context + ("\n" if web_context and doc_context else "") + doc_context
             if combined_context:
@@ -556,22 +628,50 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
         
         full_response = ""
         try:
-            # 5. Generate response tokens streaming — use values from config
             cfg = load_config()
-            sampler = make_sampler(temp=cfg["temperature"], top_p=cfg["top_p"])
-            logits_processors = [
-                make_repetition_penalty(penalty=cfg["repetition_penalty"])
-            ] if cfg["repetition_penalty"] > 1.0 else None
-            for response in stream_generate(
-                model, tokenizer,
-                prompt=prompt,
-                max_tokens=cfg["max_tokens"],
-                sampler=sampler,
-                logits_processors=logits_processors,
-            ):
-                full_response += response.text
-                yield f"data: {json.dumps({'content': response.text})}\n\n"
-                await asyncio.sleep(0) # Yield control
+
+            if IS_VLM:
+                # --- VLM Branch ---
+                # Check for images in document_store
+                image_paths = []
+                if chat_id in document_store:
+                    image_paths = [d["path"] for d in document_store[chat_id] if d.get("type") == "image"]
+                
+                # VLM prompt formatting needs the MESSAGES list, not the pre-templated string
+                formatted_prompt = apply_vlm_template(
+                    processor,
+                    load_vlm_config(MODEL_NAME),
+                    messages, # Use the original messages list
+                    num_images=len(image_paths)
+                )
+                
+                for response in stream_vlm_generate(
+                    model,
+                    processor,
+                    prompt=formatted_prompt,
+                    image=image_paths if image_paths else None,
+                    max_tokens=cfg["max_tokens"],
+                    temperature=cfg["temperature"],
+                ):
+                    full_response += response.text
+                    yield f"data: {json.dumps({'content': response.text})}\n\n"
+                    await asyncio.sleep(0)
+            else:
+                # --- standard LLM Branch ---
+                sampler = make_sampler(temp=cfg["temperature"], top_p=cfg["top_p"])
+                logits_processors = [
+                    make_repetition_penalty(penalty=cfg["repetition_penalty"])
+                ] if cfg["repetition_penalty"] > 1.0 else None
+                for response in stream_generate(
+                    model, tokenizer,
+                    prompt=prompt,
+                    max_tokens=cfg["max_tokens"],
+                    sampler=sampler,
+                    logits_processors=logits_processors,
+                ):
+                    full_response += response.text
+                    yield f"data: {json.dumps({'content': response.text})}\n\n"
+                    await asyncio.sleep(0) # Yield control
                 
         except asyncio.CancelledError:
             print(f"Chat generation for {chat_id} was cancelled by client.")
@@ -710,18 +810,18 @@ async def set_active_model(model_data: ModelAdd):
     result_q: queue.Queue = queue.Queue()
 
     def load_thread():
-        global model, tokenizer, MODEL_NAME
+        global MODEL_NAME, model, tokenizer, processor, IS_VLM
         try:
             # Update DB active flag
             with closing(get_db_connection()) as conn:
                 conn.execute("UPDATE models SET active = 0")
                 conn.execute("UPDATE models SET active = 1 WHERE name = ?", (model_data.name,))
                 conn.commit()
-            new_model, new_tok = load(model_data.name)
-            model     = new_model
-            tokenizer = new_tok
-            MODEL_NAME = model_data.name
-            result_q.put({"status": "ready", "model": model_data.name.split("/")[-1], "full": model_data.name})
+            
+            # Use the centralized helper to handle VLM vs LLM and global state
+            load_active_model(override_name=model_data.name)
+            
+            result_q.put({"status": "ready", "model": MODEL_NAME.split("/")[-1], "full": MODEL_NAME})
         except Exception as e:
             # Restore previous active model in DB
             try:
