@@ -24,6 +24,7 @@ MODEL_NAME = None
 model = None
 tokenizer = None
 DB_PATH = "database/chats.db"
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB hard limit to prevent OOM on large uploads
 
 # Track 'say' subprocesses explicitly to prevent pkill hijacking
 say_processes = set()
@@ -103,13 +104,23 @@ def get_messages(chat_id: str):
 async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)):
     try:
         content = await file.read()
-        
+
+        # Reject files that exceed the size limit before doing any processing
+        if len(content) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail=f"File too large. Maximum upload size is {MAX_UPLOAD_BYTES // (1024*1024)}MB.")
+
+        # Sanitize filename: strip path components and non-safe characters to prevent
+        # path traversal attacks (e.g. filename='../../etc/passwd')
+        import re
+        raw_name = os.path.basename(file.filename or "upload")
+        safe_name = re.sub(r'[^a-zA-Z0-9._-]', '_', raw_name) or "upload"
+
         # 1. Handle Vision Image Uploads
-        if file.filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+        if safe_name.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
             import os
             if not os.path.exists("static/images"):
                 os.makedirs("static/images")
-            img_path = f"static/images/tmp_{uuid.uuid4().hex[:8]}_{file.filename}"
+            img_path = f"static/images/tmp_{uuid.uuid4().hex[:8]}_{safe_name}"
             with open(img_path, "wb") as f:
                 f.write(content)
             
@@ -121,7 +132,7 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
             
         # 2. Handle Text Docs for RAG
         text = ""
-        if file.filename.lower().endswith(".pdf"):
+        if safe_name.lower().endswith(".pdf"):
             from PyPDF2 import PdfReader
             pdf = PdfReader(io.BytesIO(content))
             for page in pdf.pages:

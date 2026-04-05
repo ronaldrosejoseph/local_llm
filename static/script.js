@@ -39,12 +39,26 @@ const stripControlTokens = (text) => {
         .trim();
 };
 
+// DOMPurify config: allow `id` on code elements and `onclick` on copy buttons.
+// We must explicitly whitelist these because DOMPurify strips them by default.
+const DOMPURIFY_CONFIG = {
+    ADD_ATTR: ['id', 'title'],
+    ALLOWED_TAGS: [
+        'p', 'br', 'b', 'i', 'em', 'strong', 'a', 'ul', 'ol', 'li',
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+        'blockquote', 'pre', 'code', 'hr',
+        'table', 'thead', 'tbody', 'tr', 'th', 'td',
+        'div', 'span', 'button', 'img',
+        'del', 'ins', 'sup', 'sub'
+    ]
+};
+
 // Function to safely render markdown with HTML escaping and sanitization
 function renderMarkdown(content) {
     if (!content) return "";
     const clean = stripControlTokens(content);
     const html = marked.parse(clean);
-    return window.DOMPurify ? DOMPurify.sanitize(html) : html;
+    return window.DOMPurify ? DOMPurify.sanitize(html, DOMPURIFY_CONFIG) : html;
 }
 
 // Global Marked configuration
@@ -58,6 +72,8 @@ marked.use({
     renderer: {
         code({ text, lang }) {
             const id = 'code-' + Math.random().toString(36).substr(2, 9);
+            // Sanitize lang to only safe alphanumeric/dash chars before injecting into HTML
+            const safeLang = (lang || 'text').replace(/[^a-z0-9-]/gi, '');
             // We MUST escape code content because we are building a string for innerHTML
             const escaped = text
                 .replace(/&/g, '&amp;')
@@ -66,17 +82,16 @@ marked.use({
                 
             return `
                 <div class="code-container">
-                    <button class="copy-btn" onclick="copyCode('${id}')" title="Copy to clipboard">
+                    <button class="copy-btn" title="Copy to clipboard">
                         <i data-lucide="copy"></i>
                     </button>
-                    <pre><code id="${id}" class="language-${lang || 'text'}">${escaped}</code></pre>
+                    <pre><code id="${id}" class="language-${safeLang}">${escaped}</code></pre>
                 </div>
             `;
         }
     }
 });
 
-// Load history on startup
 // Load data on startup
 document.addEventListener('DOMContentLoaded', () => {
     loadChatHistory();
@@ -97,6 +112,16 @@ voiceBtn.addEventListener('click', toggleRecording);
 stopBtn.addEventListener('click', stopGeneration);
 addModelBtn.addEventListener('click', addNewModel);
 modelSelect.addEventListener('change', () => switchModel(modelSelect.value));
+
+// Event delegation for copy buttons — handles cases where DOMPurify strips inline onclick
+messagesContainer.addEventListener('click', (e) => {
+    const btn = e.target.closest('.copy-btn');
+    if (!btn) return;
+    const container = btn.closest('.code-container');
+    if (!container) return;
+    const codeEl = container.querySelector('code[id]');
+    if (codeEl) copyCode(codeEl.id);
+});
 
 const fileUpload = document.getElementById('file-upload');
 const attachBtn = document.getElementById('attach-btn');
@@ -141,7 +166,6 @@ fileUpload.addEventListener('change', async (e) => {
         if (data.status === 'ok') {
             attachmentName.textContent = `${file.name} (${data.chunks} chunks)`;
             console.log("Document processed securely.");
-            lucide.createIcons();
         } else {
             throw new Error(data.detail || "Upload failed");
         }
@@ -168,12 +192,14 @@ chatInput.addEventListener('input', () => {
 async function loadChatHistory() {
     try {
         const response = await fetch(`${API_URL}/api/chats`);
+        if (!response.ok) throw new Error(`Server error: ${response.status}`);
         const chats = await response.json();
         
         chatHistory.innerHTML = '';
         chats.forEach(chat => {
             const item = document.createElement('div');
             item.className = 'history-item';
+            item.dataset.chatId = chat.id; // used by loadChat to apply active class in-place
             if (chat.id === currentChatId) item.classList.add('active');
             item.onclick = (e) => {
                 if (e.target.closest('.delete-chat-btn')) return;
@@ -200,7 +226,7 @@ async function loadChatHistory() {
             item.appendChild(deleteBtn);
             chatHistory.appendChild(item);
         });
-        lucide.createIcons();
+        lucide.createIcons({ elements: Array.from(chatHistory.querySelectorAll('[data-lucide]')) });
     } catch (error) {
         console.error('Error loading history:', error);
     }
@@ -216,21 +242,20 @@ async function loadChat(chatId, title) {
     attachmentContainer.style.display = 'none';
     fileUpload.value = '';
     
-    // Highlight active chat in sidebar
+    // Apply active class in-place — avoids a redundant full sidebar refetch
     document.querySelectorAll('.history-item').forEach(item => {
-        item.classList.remove('active');
+        item.classList.toggle('active', item.dataset.chatId === chatId);
     });
     
     try {
         const response = await fetch(`${API_URL}/api/chats/${chatId}/messages`);
+        if (!response.ok) throw new Error(`Server error: ${response.status}`);
         const messages = await response.json();
         
         messages.forEach(msg => {
             appendMessage(msg.role, msg.content);
         });
         
-        // Mark current active item
-        loadChatHistory(); // This will refresh and apply active class
         closeSidebar();
     } catch (error) {
         console.error('Error loading chat:', error);
@@ -336,14 +361,19 @@ async function sendMessage(text = null) {
     
     let requestChatId = currentChatId;
     abortController = new AbortController();
-    
+
+    // Hoist stream state so the finally block can flush any pending debounced render
+    let streamRenderTimer = null;
+    let assistantMessageDiv = null;
+    let contentDiv = null;
+    let fullContent = "";
+
     // Lock UI immediately for ALL generations
     document.querySelectorAll('#chat-history, .new-chat-btn, #add-model-btn').forEach(item => {
         item.style.pointerEvents = 'none';
         item.style.opacity = '0.5';
     });
-    const modelSelect = document.getElementById('model-select');
-    if (modelSelect) modelSelect.disabled = true;
+    modelSelect.disabled = true;
     
     try {
         const response = await fetch(`${API_URL}/api/chat${requestChatId ? `?chat_id=${requestChatId}` : ''}`, {
@@ -353,12 +383,8 @@ async function sendMessage(text = null) {
             signal: abortController.signal
         });
         
-        let assistantMessageDiv = null;
-        let contentDiv = null;
-        
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
-        let fullContent = "";
         
         while (true) {
             const { done, value } = await reader.read();
@@ -376,9 +402,7 @@ async function sendMessage(text = null) {
                         const data = JSON.parse(dataStr);
                         if (data.chat_id && !requestChatId) {
                             requestChatId = data.chat_id;
-                            if (!currentChatId) {
-                                currentChatId = data.chat_id;
-                            }
+                            if (!currentChatId) currentChatId = data.chat_id;
                             loadChatHistory();
                         }
                         if (data.clear) {
@@ -408,11 +432,21 @@ async function sendMessage(text = null) {
                                         <button onclick="stopSpeaking()" title="Stop speaking" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="square" style="width: 14px; height: 14px;"></i></button>
                                     `;
                                     assistantMessageDiv.appendChild(actionsDiv);
-                                    
                                     messagesContainer.appendChild(assistantMessageDiv);
-                                    lucide.createIcons();
+                                    // Scope icon creation to just the new actions div
+                                    lucide.createIcons({ elements: Array.from(actionsDiv.querySelectorAll('[data-lucide]')) });
                                 }
-                                contentDiv.innerHTML = renderMarkdown(fullContent);
+                                // Throttle markdown re-renders to ~20fps — only schedule a new render
+                                // if one isn't already queued. This way tokens accumulate and the
+                                // scheduled callback always reads the latest fullContent when it fires.
+                                if (!streamRenderTimer) {
+                                    streamRenderTimer = setTimeout(() => {
+                                        streamRenderTimer = null;
+                                        contentDiv.innerHTML = renderMarkdown(fullContent);
+                                        lucide.createIcons({ elements: Array.from(contentDiv.querySelectorAll('[data-lucide]')) });
+                                        scrollToBottom();
+                                    }, 50);
+                                }
                             }
                             continue;
                         }
@@ -422,9 +456,6 @@ async function sendMessage(text = null) {
                 }
             }
         }
-        
-        // Finalizing UI
-        lucide.createIcons();
         
         // Auto-speak if toggled
         if (autoSpeakToggle.checked && currentChatId === requestChatId) {
@@ -441,6 +472,13 @@ async function sendMessage(text = null) {
             console.error('Error:', error);
         }
     } finally {
+        // Flush any pending debounced render so the final state is always displayed
+        clearTimeout(streamRenderTimer);
+        if (contentDiv && fullContent) {
+            contentDiv.innerHTML = renderMarkdown(fullContent);
+            lucide.createIcons({ elements: Array.from(contentDiv.querySelectorAll('[data-lucide]')) });
+        }
+
         sendBtn.style.display = 'flex';
         stopBtn.style.display = 'none';
         abortController = null;
@@ -450,8 +488,7 @@ async function sendMessage(text = null) {
             item.style.pointerEvents = 'auto';
             item.style.opacity = '1';
         });
-        const modelSelect = document.getElementById('model-select');
-        if (modelSelect) modelSelect.disabled = false;
+        modelSelect.disabled = false;
     }
 }
 
@@ -487,7 +524,7 @@ function appendMessage(role, content) {
         </div>
     `;
     messagesContainer.appendChild(div);
-    lucide.createIcons();
+    lucide.createIcons({ elements: Array.from(div.querySelectorAll('[data-lucide]')) });
     scrollToBottom();
 }
 
@@ -688,7 +725,7 @@ async function copyCode(elementId) {
             const newIcon = document.createElement('i');
             newIcon.setAttribute('data-lucide', 'check');
             icon.replaceWith(newIcon);
-            lucide.createIcons();
+            lucide.createIcons({ elements: [newIcon] });
         }
         
         setTimeout(() => {
@@ -698,7 +735,7 @@ async function copyCode(elementId) {
                 const newIcon = document.createElement('i');
                 newIcon.setAttribute('data-lucide', 'copy');
                 currentIcon.replaceWith(newIcon);
-                lucide.createIcons();
+                lucide.createIcons({ elements: [newIcon] });
             }
         }, 2000);
     } catch (err) {
