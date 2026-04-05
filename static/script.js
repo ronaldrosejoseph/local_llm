@@ -212,6 +212,10 @@ async function loadChat(chatId, title) {
     welcomeScreen.style.display = 'none';
     messagesContainer.innerHTML = '';
     
+    // Clear pending structural attachments instantly on switch
+    attachmentContainer.style.display = 'none';
+    fileUpload.value = '';
+    
     // Highlight active chat in sidebar
     document.querySelectorAll('.history-item').forEach(item => {
         item.classList.remove('active');
@@ -238,6 +242,10 @@ async function startNewChat() {
     currentChatTitle.textContent = 'New Conversation';
     messagesContainer.innerHTML = '';
     welcomeScreen.style.display = 'flex';
+    
+    // Clear pending structural attachments instantly on fresh slate
+    attachmentContainer.style.display = 'none';
+    fileUpload.value = '';
     loadChatHistory();
     closeSidebar();
     chatInput.value = '';
@@ -586,6 +594,10 @@ async function addNewModel() {
         return;
     }
     
+    const originalBadgeText = modelBadge.textContent;
+    modelBadge.textContent = "Downloading...";
+    modelBadge.style.opacity = "0.5";
+    
     try {
         const response = await fetch(`${API_URL}/api/models`, {
             method: 'POST',
@@ -602,6 +614,9 @@ async function addNewModel() {
         }
     } catch (error) {
         console.error('Error adding model:', error);
+    } finally {
+        modelBadge.textContent = originalBadgeText;
+        modelBadge.style.opacity = "1";
     }
 }
 

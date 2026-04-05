@@ -19,7 +19,7 @@ import numpy as np
 app = FastAPI()
 
 # Global state for model and tokenizer
-DEFAULT_MODEL = "mlx-community/gemma-3-4b-it-4bit-DWQ"
+DEFAULT_MODEL = "mlx-community/Llama-3.2-1B-Instruct-4bit"
 MODEL_NAME = None
 model = None
 tokenizer = None
@@ -156,9 +156,11 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
     # 1. Start or resume chat
     if not chat_id:
         chat_id = str(uuid.uuid4())
-        # Use first message as title
-        title = chat_data.message[:50] + "..." if len(chat_data.message) > 50 else chat_data.message
-        with closing(get_db_connection()) as conn:
+        
+    with closing(get_db_connection()) as conn:
+        chat_exists = conn.execute("SELECT id FROM chats WHERE id = ?", (chat_id,)).fetchone()
+        if not chat_exists:
+            title = chat_data.message[:50] + "..." if len(chat_data.message) > 50 else chat_data.message
             conn.execute("INSERT INTO chats (id, title) VALUES (?, ?)", (chat_id, title))
             conn.commit()
     
@@ -190,25 +192,48 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
             
             def generation_thread():
                 try:
-                    import torch
-                    from diffusers import StableDiffusionPipeline
+                    from mflux.models.common.config import ModelConfig
+                    from mflux.models.flux.variants.txt2img.flux import Flux1
+                    from mflux.callbacks.callback import InLoopCallback
                     import os
+                    import time
+                    
+                    global model, tokenizer
+                    model = None
+                    tokenizer = None
+                    import gc; gc.collect()
+                    import mlx.core as mx; mx.metal.clear_cache()
                     
                     if not os.path.exists("static/images"):
                         os.makedirs("static/images")
                         
-                    model_id = "runwayml/stable-diffusion-v1-5"
-                    pipe = StableDiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float16)
-                    pipe = pipe.to("mps")
+                    class ProgressCB(InLoopCallback):
+                        def call_in_loop(self, t, seed, prompt, latents, config, time_steps, **kwargs):
+                            if time_steps and time_steps.total > 0:
+                                progress = int((time_steps.n / time_steps.total) * 100)
+                                q.put({"progress": progress})
+                                
+                    flux = Flux1(
+                        model_config=ModelConfig.from_name(model_name="schnell"),
+                        quantize=4
+                    )
+                    flux.callbacks.register(ProgressCB())
                     
-                    def cb(pipe_c, step_index, timestep, callback_kwargs):
-                        progress = int((step_index / pipe_c.num_timesteps) * 100)
-                        q.put({"progress": progress})
-                        return callback_kwargs
-                        
-                    image = pipe(prompt, callback_on_step_end=cb).images[0]
+                    image = flux.generate_image(
+                        seed=int(time.time()),
+                        prompt=prompt,
+                        num_inference_steps=4,
+                        width=720,
+                        height=720
+                    )
+                    
                     img_path = f"static/images/{img_name}"
-                    image.save(img_path)
+                    image.save(path=img_path)
+                    
+                    del flux
+                    import gc; gc.collect()
+                    import mlx.core as mx; mx.metal.clear_cache()
+                    load_active_model()
                     
                     markdown_img = f"![{prompt}](/images/{img_name})\n"
                     assistant_full_reply = f"Here is the image you requested:\n\n{markdown_img}"
@@ -284,26 +309,50 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
             
             def edit_thread():
                 try:
-                    import torch
-                    from diffusers import StableDiffusionImg2ImgPipeline
+                    from mflux.models.common.config import ModelConfig
+                    from mflux.models.flux.variants.txt2img.flux import Flux1
+                    from mflux.callbacks.callback import InLoopCallback
                     import os
-                    from PIL import Image
+                    import time
                     
-                    init_image = Image.open(source_image_path).convert("RGB")
-                    init_image = init_image.resize((512, 512)) # VRAM protection
+                    global model, tokenizer
+                    model = None
+                    tokenizer = None
+                    import gc; gc.collect()
+                    import mlx.core as mx; mx.metal.clear_cache()
                     
-                    model_id = "runwayml/stable-diffusion-v1-5"
-                    pipe = StableDiffusionImg2ImgPipeline.from_pretrained(model_id, torch_dtype=torch.float16)
-                    pipe = pipe.to("mps")
-                    
-                    def cb(pipe_c, step_index, timestep, callback_kwargs):
-                        progress = int((step_index / pipe_c.num_timesteps) * 100)
-                        q.put({"progress": progress})
-                        return callback_kwargs
+                    if not os.path.exists("static/images"):
+                        os.makedirs("static/images")
                         
-                    image = pipe(prompt=prompt, image=init_image, strength=0.75, guidance_scale=7.5, callback_on_step_end=cb).images[0]
+                    class ProgressCB(InLoopCallback):
+                        def call_in_loop(self, t, seed, prompt, latents, config, time_steps, **kwargs):
+                            if time_steps and time_steps.total > 0:
+                                progress = int((time_steps.n / time_steps.total) * 100)
+                                q.put({"progress": progress})
+                                
+                    flux = Flux1(
+                        model_config=ModelConfig.from_name(model_name="schnell"),
+                        quantize=4
+                    )
+                    flux.callbacks.register(ProgressCB())
+                    
+                    image = flux.generate_image(
+                        seed=int(time.time()),
+                        prompt=prompt,
+                        num_inference_steps=8,
+                        width=720,
+                        height=720,
+                        image_path=source_image_path,
+                        image_strength=0.15
+                    )
+                    
                     img_path = f"static/images/{img_name}"
-                    image.save(img_path)
+                    image.save(path=img_path)
+                    
+                    del flux
+                    import gc; gc.collect()
+                    import mlx.core as mx; mx.metal.clear_cache()
+                    load_active_model()
                     
                     markdown_img = f"![{prompt}](/images/{img_name})\n"
                     assistant_full_reply = f"Here is your edited image:\n\n{markdown_img}"
@@ -428,7 +477,7 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
         full_response = ""
         try:
             # 5. Generate response tokens streaming
-            for response in stream_generate(model, tokenizer, prompt=prompt, max_tokens=2048):
+            for response in stream_generate(model, tokenizer, prompt=prompt, max_tokens=8192):
                 full_response += response.text
                 yield f"data: {json.dumps({'content': response.text})}\n\n"
                 await asyncio.sleep(0) # Yield control

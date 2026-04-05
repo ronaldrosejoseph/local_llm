@@ -25,13 +25,22 @@ This application transforms your machine into a fully private AI workstation:
 
 ### 📸 Vision & Image Generation
 - **Text-To-Image Generation (`/imagine`)**: 
-  - Start a prompt with `/imagine` (e.g., `/imagine A futuristic cyberpunk city`) to bypass the text LLM and boot a `StableDiffusionPipeline`.
-  - Images are generated locally on your Mac's GPU and streamed straight back into the chat window.
+  - Start a prompt with `/imagine` (e.g., `/imagine A futuristic cyberpunk city`) to bypass the text LLM and natively boot **FLUX.1 Schnell** pipelines.
+  - High fidelity 1024x1024 images are generated locally using Apple Silicon 4-bit `mflux` architecture, complete with dynamic ASCII progress bars seamlessly streaming directly into your chat window.
 - **Image-To-Image Editing (`/edit`)**: 
   - Upload a source photo via the **Paperclip Icon** and enter a prompt starting with `/edit` (e.g., `/edit Change the background to a sunny beach in Hawaii`).
-  - The `StableDiffusionImg2ImgPipeline` edits the source photo using your prompt structurally and returns the modified image.
+  - The framework intercepts the image as a structural baseline and creatively edits the canvas utilizing FLUX Matrix Noise.
+
+> [!CAUTION]
+> **Important FLUX.1 Authentication Step**: 
+> The advanced image generation engine requires access to the `FLUX.1-schnell` repository owned by Black Forest Labs. Because this repository is **gated**, your server will crash with a `401 Unauthorized` HTTP error unless you authenticate.
+> 1. Log into your Hugging Face account, navigate to [FLUX.1-schnell](https://huggingface.co/black-forest-labs/FLUX.1-schnell), and **explicitly click the "Agree to access repository" button** on their model card. (Generating a token is not enough; your account must independently accept their terms).
+> 2. Open a local terminal and natively authenticate your Mac by running: 
+> ```bash
+> ./venv/bin/python3 -c "from huggingface_hub import login; login(token='YOUR_HF_TOKEN')"
+> ```
 - **Vision Models (`mlx_vlm`)**: 
-  - Hook into multimodal functionality natively! Pass photos seamlessly into Vision LLMs locally (e.g., `Qwen-VL`).
+  - Hook into multimodal functionality natively! Pass photos seamlessly into Vision LLMs locally (e.g., `Qwen2.5-VL`).
 
 ### 🎙️ Audio Interaction
 - **Speech-to-Text**: Click the mic icon to dictate physical voice sequences to the LLM.
@@ -55,7 +64,7 @@ chmod +x start.sh stop.sh restart.sh
 ./start.sh
 ```
 
-*(Note: The first time you execute an image generation command, the PyTorch tensors will download the Stable Diffusion baseline models locally, which may take ~2-5GB of space.)*
+*(Note: The very first time you execute an image generation command, the `mflux` library will forcibly intercept your command to download the FLUX.1 baseline models locally, which consumes roughly **~24GB** of space inside `~/.cache/`. Do not interrupt this process.)*
 
 ### 3. Server Management
 
@@ -78,10 +87,10 @@ Control your FastAPI application running in the background natively:
 
 ## 🛠️ Architecture
 
-- **Backend**: FastAPI, MLX (`mlx_lm`, `mlx_vlm`), PyTorch, Diffusers, Sentence-Transformers
+- **Backend**: FastAPI, MLX (`mlx_lm`, `mlx_vlm`, `mflux`), PyTorch, Sentence-Transformers
 - **Frontend**: Vanilla HTML/CSS/JS, DOMPurify (XSS Protection), Lucide Icons
 - **Storage**: SQLite natively tracking chat IDs, messages, and model registries.
-- **Default Baseline Architecture**: `mlx-community/gemma-3-4b-it-4bit-DWQ`
+- **Default Baseline Architecture**: `mlx-community/Llama-3.2-1B-Instruct-4bit`
 
 ---
 
@@ -89,9 +98,11 @@ Control your FastAPI application running in the background natively:
 
 The application dynamically detects model environments. You can add new ones by pasting their Hugging Face identifier into the custom UI settings modal:
 
-- **Gemma 3 12B**: `mlx-community/gemma-3-12b-it-4bit-DWQ`
-- **Qwen 2.5 Coder 7B**: `mlx-community/Qwen2.5-Coder-7B-Instruct-4bit`
-- **Llama 3.2 1B**: `mlx-community/Llama-3.2-1B-Instruct-4bit`
+- **Llama 3.2 1B (Default)**: `mlx-community/Llama-3.2-1B-Instruct-4bit`
+- **Gemma 3 4B**: `mlx-community/gemma-3-4b-it-4bit-DWQ`
+- **Qwen 2.5 VL 7B**: `mlx-community/Qwen2.5-VL-7B-Instruct-4bit`
 
 > [!TIP]
+> For coding tasks, use `mlx-community/Qwen2.5-Coder-7B-Instruct-4bit`
+> For logic and reasoning tasks, use `mlx-community/Qwen3-14B-4bit`
 > You can switch between active models instantly using the sidebar dropdown! The MLX engine will automatically dump the previous model from VRAM and allocate the new pipeline on the fly.

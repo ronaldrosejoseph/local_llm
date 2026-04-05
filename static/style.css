@@ -425,6 +425,21 @@ html {
     font-size: 0.9em;
 }
 
+/* Image generation styling */
+.message-content p:has(img) {
+    overflow-x: auto;
+    max-width: 100%;
+    border-radius: 8px;
+    padding-bottom: 5px; /* Margin for scrollbar */
+}
+
+.message-content img {
+    display: block;
+    max-width: none;
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
 /* Code block styling enhancements */
 .code-container {
     position: relative;
