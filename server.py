@@ -66,6 +66,7 @@ say_processes = set()
 
 embedder_model = None
 document_store = {} # mapping chat_id -> lists of dicts {"text": chunk, "emb": vector}
+rag_offsets = {}    # mapping chat_id -> current integer offset for context windowing
 
 def get_embedder():
     global embedder_model
@@ -126,39 +127,44 @@ def load_active_model(override_name: str = None) -> tuple[bool, str]:
         
     print(f"Loading model {MODEL_NAME}...")
     
-    # Detect if model is Vision-based (contains 'vl' or 'internvl' etc.)
-    IS_VLM = any(x in MODEL_NAME.lower() for x in ["-vl", "vision", "internvl", "molmo"])
-    
     try:
-        if IS_VLM:
-            print(f"Vision model detected. Loading via mlx_vlm...")
-            model, processor = mlx_vlm.load(MODEL_NAME)
-            tokenizer        = processor.tokenizer # align for shared code
-        else:
+        # Step 1: Attempt to load as a Vision model (VLM)
+        print(f"Checking if {MODEL_NAME} is a Vision model (mlx_vlm)...")
+        model, processor = mlx_vlm.load(MODEL_NAME)
+        tokenizer        = processor.tokenizer # align for shared code
+        IS_VLM = True
+        print(f"Model {MODEL_NAME} loaded successfully as VLM.")
+        return True, MODEL_NAME
+    except Exception as e_vlm:
+        # Step 2: If VLM load fails, attempt as a standard LLM
+        print(f"Not a VLM or mlx_vlm failed ({e_vlm}). Trying as standard LLM (mlx_lm)...")
+        try:
             model, tokenizer = load(MODEL_NAME)
             processor = None
+            IS_VLM = False
+            print(f"Model {MODEL_NAME} loaded successfully as standard LLM.")
+            return True, MODEL_NAME
+        except Exception as e_lm:
+            # Step 3: Total Load Failure
+            error_msg = str(e_lm)
+            print(f"Error loading model {MODEL_NAME}: {error_msg}")
             
-        print(f"Model {MODEL_NAME} loaded successfully (VLM: {IS_VLM}).")
-        return True, MODEL_NAME
-    except Exception as e:
-        error_msg = str(e)
-        print(f"Error loading model {MODEL_NAME}: {error_msg}")
-        # If the active model fails, try to load the default
-        if MODEL_NAME != DEFAULT_MODEL:
-            print(f"Falling back to default model: {DEFAULT_MODEL}")
-            # Update DB to reflect fallback so UI and future loads are correct
-            with closing(get_db_connection()) as conn:
-                conn.execute("UPDATE models SET active = 0")
-                conn.execute("UPDATE models SET active = 1 WHERE name = ?", (DEFAULT_MODEL,))
-                conn.commit()
-            
-            # Recursive call to load the default model
-            _, final_name = load_active_model(override_name=DEFAULT_MODEL)
-            return False, final_name
-        else:
-            print("CRITICAL: Both active and default models failed to load. Server will be non-functional.")
-            model, tokenizer, processor = None, None, None
-            return False, MODEL_NAME
+            # If the active model fails, try to load the default
+            if MODEL_NAME != DEFAULT_MODEL:
+                print(f"Falling back to default model: {DEFAULT_MODEL}")
+                # Update DB to reflect fallback so UI and future loads are correct
+                with closing(get_db_connection()) as conn:
+                    conn.execute("UPDATE models SET active = 0")
+                    conn.execute("UPDATE models SET active = 1 WHERE name = ?", (DEFAULT_MODEL,))
+                    conn.commit()
+                
+                # Recursive call to load the default model
+                _, final_name = load_active_model(override_name=DEFAULT_MODEL)
+                return False, final_name
+            else:
+                print("CRITICAL: Both active and default models failed to load. Server will be non-functional.")
+                model, tokenizer, processor = None, None, None
+                return False, MODEL_NAME
 
 # Initial load at startup
 load_active_model()
@@ -238,32 +244,48 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
         # PDFs are parsed page-by-page; everything else is read as UTF-8
         text = ""
         if safe_name.lower().endswith(".pdf"):
-            # IF VLM IS ACTIVE: Render PDF as images for visual OCR
-            if IS_VLM:
-                print("Vision model active: converting PDF to images...")
-                img_paths = pdf_to_images(content, chat_id)
-                if chat_id not in document_store:
-                    document_store[chat_id] = []
-                for p in img_paths:
-                    document_store[chat_id].append({"type": "image", "path": p})
-                
-                # Record attachment in DB so it shows up in history when switching chats
-                with closing(get_db_connection()) as conn:
-                    if not conn.execute("SELECT id FROM chats WHERE id = ?", (chat_id,)).fetchone():
-                        conn.execute("INSERT INTO chats (id, title) VALUES (?, ?)", (chat_id, f"Doc: {file.filename}"))
-                    conn.execute("INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)", 
-                                 (chat_id, "user", f"[Attached Document: {file.filename}]"))
-                    conn.commit()
-
-                return {"status": "ok", "chunks": len(img_paths), "filename": file.filename, "vision": True}
-
-            # FALLBACK/LLM: Extract text layer
+            import io
             from PyPDF2 import PdfReader
+            
+            # Hybrid Logic: Check if PDF has a digital text layer
+            print(f"Analyzing PDF: {file.filename} for digital text...")
             pdf = PdfReader(io.BytesIO(content))
-            for page in pdf.pages:
-                extracted = page.extract_text()
-                if extracted:
-                    text += extracted + "\n"
+            digital_text = ""
+            # Sampling first 3 pages for a quick "has-text" check
+            for page in pdf.pages[:3]:
+                t = page.extract_text()
+                if t: digital_text += t
+            
+            # THRESHOLD: If we found substantial text, prioritize RAG/Text path
+            if len(digital_text.strip()) > 50:
+                print("Digital text detected, using PyPDF2 for extraction.")
+                text = ""
+                for page in pdf.pages:
+                    extracted = page.extract_text()
+                    if extracted:
+                        text += extracted + "\n"
+            else:
+                # SCANNED/IMAGE PDF: Use Vision model if active
+                if IS_VLM:
+                    print("No digital text found (scanned): converting PDF to images via fitz...")
+                    img_paths = pdf_to_images(content, chat_id)
+                    if chat_id not in document_store:
+                        document_store[chat_id] = []
+                    for p in img_paths:
+                        document_store[chat_id].append({"type": "image", "path": p})
+                    
+                    with closing(get_db_connection()) as conn:
+                        if not conn.execute("SELECT id FROM chats WHERE id = ?", (chat_id,)).fetchone():
+                            conn.execute("INSERT INTO chats (id, title) VALUES (?, ?)", (chat_id, f"Doc: {file.filename}"))
+                        conn.execute("INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)", 
+                                     (chat_id, "user", f"[Attached Scanned Document: {file.filename}]"))
+                        conn.commit()
+
+                    return {"status": "ok", "chunks": len(img_paths), "filename": file.filename, "vision": True}
+                else:
+                    # No Vision + Scanned PDF = Empty RAG (existing fallback)
+                    print("No digital text and no Vision model active. Extracting minimal text.")
+                    text = digital_text # already sampled above
         else:
             text = content.decode("utf-8", errors="ignore")
 
@@ -360,6 +382,20 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
     # 4. Format prompt
     # 2b. Check for Web Search Triggering
     message_content = chat_data.message
+    
+    # --- RAG Pagination Detection ---
+    is_next_command = False
+    # Detect patterns like "next 50", "/next", "more context", "next page"
+    if re.search(r'(\bnext\b|\bmore\b)\s+(\b50\b|\bcontext\b|\bpage\b|\bchunks\b)', message_content.lower()) or message_content.strip().startswith('/next'):
+        is_next_command = True
+        rag_offsets[chat_id] = rag_offsets.get(chat_id, 0) + 50
+        print(f"Pagination triggered for {chat_id}: New offset = {rag_offsets[chat_id]}")
+    else:
+        # Reset pagination for any new specific question to keep relevance high
+        if chat_id in rag_offsets:
+            print(f"New query detected, resetting RAG offset for {chat_id}.")
+            rag_offsets[chat_id] = 0
+    
     # 2c. Check for Image Generation Triggering
     if message_content.strip().startswith("/imagine"):
         prompt = message_content.strip()[8:].strip()
@@ -600,7 +636,7 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                     print("wttr.in fail:", e)
                     
         try:
-            import urllib.request, urllib.parse, re
+            import urllib.request, urllib.parse
             url = "https://html.duckduckgo.com/html/?q=" + urllib.parse.quote(query)
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.75 Safari/537.36"})
             html = urllib.request.urlopen(req, timeout=5).read().decode("utf-8")
@@ -618,6 +654,9 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
             
         if not web_context:
             web_context = "System Note: Live Web search is currently temporarily blocked or failing. Tell the user you couldn't access the live web context right now."
+    
+    # Hoist RAG status variables for event_generator
+    rag_meta = None
     
     for i, h in enumerate(history):
         content = h["content"]
@@ -642,12 +681,28 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                         d_norms = doc_embs / np.linalg.norm(doc_embs, axis=1)[:, np.newaxis]
                         similarities = np.dot(d_norms, q_norm)
                         
-                        top_k = min(3, len(similarities))
-                        top_indices = np.argsort(similarities)[-top_k:][::-1]
+                        # Sorting all available chunks by descending similarity
+                        all_indices = np.argsort(similarities)[::-1]
+                        total_chunks = len(all_indices)
                         
-                        doc_context = "### Attached Document Context ###\n"
+                        # Windowing Logic
+                        offset = rag_offsets.get(chat_id, 0)
+                        # Ensure we don't exceed the total length
+                        if offset >= total_chunks: offset = 0 
+                        
+                        limit = 50
+                        top_indices = all_indices[offset : offset + limit]
+                        rag_meta = {"offset": offset, "total": total_chunks, "limit": limit}
+                        
+                        doc_context = f"### Attached Document Context (Chunks {offset+1} to {min(offset+limit, total_chunks)} of {total_chunks}) ###\n"
+                        if offset > 0:
+                            doc_context += f"System note: You are viewing the NEXT set of relevant context. Previous {offset} chunks have been hidden to save memory.\n\n"
+                        
                         for idx in top_indices:
                             doc_context += f"- {docs[idx]['text']}\n\n"
+                        
+                        if total_chunks > (offset + limit):
+                            doc_context += f"\nNote to model: There are {total_chunks - (offset + limit)} more chunks available. If the user asks for 'more' or 'next', inform them that you can advance the context window.\n"
                     else:
                         print("RAG: No indexable documents found for this chat.")
                 except Exception as e:
@@ -662,8 +717,10 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
     prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     
     async def event_generator():
-        # Yield the chat_id first so the client knows it
+        # Yield metadata first: chat_id and RAG window info
         yield f"data: {json.dumps({'chat_id': chat_id})}\n\n"
+        if rag_meta:
+            yield f"data: {json.dumps({'rag_status': rag_meta})}\n\n"
         
         full_response = ""
         try:

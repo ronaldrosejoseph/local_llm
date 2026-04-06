@@ -430,6 +430,11 @@ async function loadChat(chatId, title) {
             appendMessage(msg.role, msg.content);
         });
 
+        // Hide RAG info on load; it will reappear if the next message triggers it
+        const ragStatus = document.getElementById('rag-status');
+        if (ragStatus) ragStatus.style.display = 'none';
+
+        scrollToBottom(true);
         closeSidebar();
     } catch (error) {
         console.error('Error loading chat:', error);
@@ -445,6 +450,11 @@ async function startNewChat() {
     // Clear pending structural attachments instantly on fresh slate
     attachmentContainer.style.display = 'none';
     fileUpload.value = '';
+    
+    // Reset RAG badge
+    const ragStatus = document.getElementById('rag-status');
+    if (ragStatus) ragStatus.style.display = 'none';
+
     loadChatHistory();
     closeSidebar();
     chatInput.value = '';
@@ -577,6 +587,17 @@ async function sendMessage(text = null) {
 
                     try {
                         const data = JSON.parse(dataStr);
+                        
+                        if (data.rag_status) {
+                            const rs = data.rag_status;
+                            const el = document.getElementById('rag-status');
+                            if (el) {
+                                const end = Math.min(rs.offset + rs.limit, rs.total);
+                                el.textContent = `Context: ${rs.offset + 1}-${end} / ${rs.total}`;
+                                el.style.display = 'inline-block';
+                            }
+                        }
+
                         if (data.chat_id && !requestChatId) {
                             requestChatId = data.chat_id;
                             if (!currentChatId) currentChatId = data.chat_id;

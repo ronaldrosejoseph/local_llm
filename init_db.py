@@ -88,7 +88,7 @@ def init_db():
         cursor.execute("INSERT INTO models (name, active, supports_vision, supports_image_generation, is_downloaded) VALUES (?, ?, ?, ?, ?)", 
                        ("mlx-community/Llama-3.2-1B-Instruct-4bit", 1, 0, 0, 1))
         cursor.execute("INSERT INTO models (name, active, supports_vision, supports_image_generation, is_downloaded) VALUES (?, ?, ?, ?, ?)", 
-                       ("mlx-community/gemma-3-4b-it-4bit-DWQ", 0, 0, 0, 0))
+                       ("mlx-community/gemma-4-e4b-it-4bit", 0, 0, 0, 0))
         cursor.execute("INSERT INTO models (name, active, supports_vision, supports_image_generation, is_downloaded) VALUES (?, ?, ?, ?, ?)", 
                        ("mlx-community/Qwen2.5-VL-7B-Instruct-4bit", 0, 1, 0, 0))
     

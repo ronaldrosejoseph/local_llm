@@ -22,6 +22,12 @@ This application transforms your machine into a fully private AI workstation:
 - **Document Chat & RAG (Retrieval-Augmented Generation)**: 
   - Click the **Paperclip Icon** to upload `.txt` or `.pdf` files. 
   - An ultra-fast local embedding pipeline chunks and indexes your documents into memory. Subsequent messages will dynamically grab the most relevant context vectors using Cosine Similarity natively over CPU/MPS.
+- **📚 Large Document Navigation (RAG Pagination)**:
+  - For documents longer than 50 chunks, the system uses a **sliding window** to prevent the model from becoming overwhelmed.
+  - **Context Status**: A live badge in the chat header (e.g., `Context: 1-50 / 450`) shows your current "view" of the document.
+  - **Commands**:
+    - Type **`/next`** or say **"next 50 chunks"** to slide the window forward and explore deeper into the document.
+    - **Auto-Reset**: Any new, specific question will automatically reset the window to the **top 50 most relevant** chunks for that query.
 
 ### 📸 Vision & Image Generation
 - **Text-To-Image Generation (`/imagine`)**: 
@@ -99,7 +105,7 @@ Control your FastAPI application running in the background natively:
 The application dynamically detects model environments. You can add new ones by pasting their Hugging Face identifier into the custom UI settings modal:
 
 - **Llama 3.2 1B (Default)**: `mlx-community/Llama-3.2-1B-Instruct-4bit`
-- **Gemma 3 4B**: `mlx-community/gemma-3-4b-it-4bit-DWQ`
+- **Gemma 3 4B**: `mlx-community/gemma-4-e4b-it-4bit`
 - **Qwen 2.5 VL 7B**: `mlx-community/Qwen2.5-VL-7B-Instruct-4bit`
 
 > [!TIP]
