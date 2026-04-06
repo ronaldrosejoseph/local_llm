@@ -79,7 +79,7 @@ marked.use({
                 .replace(/&/g, '&amp;')
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;');
-                
+
             return `
                 <div class="code-container">
                     <button class="copy-btn" title="Copy to clipboard">
@@ -134,8 +134,8 @@ menuToggle.addEventListener('click', toggleSidebar);
 sidebarOverlay.addEventListener('click', closeSidebar);
 
 // --- Settings Modal ---
-const settingsModal    = document.getElementById('settings-modal');
-const settingsOpenBtn  = document.getElementById('settings-open-btn');
+const settingsModal = document.getElementById('settings-modal');
+const settingsOpenBtn = document.getElementById('settings-open-btn');
 const settingsCloseBtn = document.getElementById('settings-close-btn');
 
 function openSettings() {
@@ -175,9 +175,9 @@ function applyConfigToUI(cfg) {
         if (el) el.value = val;
         if (valEl) valEl.textContent = val;
     };
-    set('cfg-max-tokens',  'val-max-tokens',  cfg.max_tokens);
+    set('cfg-max-tokens', 'val-max-tokens', cfg.max_tokens);
     set('cfg-temperature', 'val-temperature', cfg.temperature);
-    set('cfg-top-p',       'val-top-p',       cfg.top_p);
+    set('cfg-top-p', 'val-top-p', cfg.top_p);
     set('cfg-rep-penalty', 'val-rep-penalty', cfg.repetition_penalty);
 }
 
@@ -201,19 +201,19 @@ function scheduleConfigSave(patch) {
 }
 
 // Wire each slider
-document.getElementById('cfg-max-tokens').addEventListener('input', function() {
+document.getElementById('cfg-max-tokens').addEventListener('input', function () {
     document.getElementById('val-max-tokens').textContent = this.value;
     scheduleConfigSave({ max_tokens: parseInt(this.value) });
 });
-document.getElementById('cfg-temperature').addEventListener('input', function() {
+document.getElementById('cfg-temperature').addEventListener('input', function () {
     document.getElementById('val-temperature').textContent = parseFloat(this.value).toFixed(2);
     scheduleConfigSave({ temperature: parseFloat(this.value) });
 });
-document.getElementById('cfg-top-p').addEventListener('input', function() {
+document.getElementById('cfg-top-p').addEventListener('input', function () {
     document.getElementById('val-top-p').textContent = parseFloat(this.value).toFixed(2);
     scheduleConfigSave({ top_p: parseFloat(this.value) });
 });
-document.getElementById('cfg-rep-penalty').addEventListener('input', function() {
+document.getElementById('cfg-rep-penalty').addEventListener('input', function () {
     document.getElementById('val-rep-penalty').textContent = parseFloat(this.value).toFixed(2);
     scheduleConfigSave({ repetition_penalty: parseFloat(this.value) });
 });
@@ -236,8 +236,8 @@ async function loadSettingsModels() {
 
         models.forEach(m => {
             const parts = m.name.split('/');
-            const org   = parts[0] || '';
-            const name  = parts[1] || m.name;
+            const org = parts[0] || '';
+            const name = parts[1] || m.name;
 
             const item = document.createElement('div');
             item.className = 'settings-model-item';
@@ -299,7 +299,7 @@ fileUpload.addEventListener('change', async (e) => {
     if (!file) return;
 
     if (!currentChatId) {
-        await startNewChat(); 
+        await startNewChat();
         // Need to wait until chat id generates after first message for pure alignment,
         // but for now, generate UUID client side or force a message.
         currentChatId = crypto.randomUUID(); // optimistic
@@ -318,25 +318,25 @@ fileUpload.addEventListener('change', async (e) => {
             method: 'POST',
             body: formData
         });
-        
+
         if (!res.ok) {
             const data = await res.json().catch(() => ({}));
             throw new Error(data.detail || "Upload failed");
         }
-        
+
         const data = await res.json();
-        
+
         if (data.status === 'ok') {
             attachmentName.textContent = `${file.name} (${data.chunks} chunks)`;
             console.log("Document processed securely.");
-            
+
             // 1. Immediately append to the chat UI
             const msg = data.vision ? `[Attached Image: ${file.name}]` : `[Attached Document: ${file.name}]`;
             appendMessage('user', msg);
-            
+
             // 2. Hide welcome screen if this was the first action
             welcomeScreen.style.display = 'none';
-            
+
             // 3. Refresh chat history in sidebar to show the new chat if it was just created
             loadChatHistory();
         }
@@ -368,7 +368,7 @@ async function loadChatHistory() {
         const response = await fetch(`${API_URL}/api/chats`);
         if (!response.ok) throw new Error(`Server error: ${response.status}`);
         const chats = await response.json();
-        
+
         chatHistory.innerHTML = '';
         chats.forEach(chat => {
             const item = document.createElement('div');
@@ -379,24 +379,24 @@ async function loadChatHistory() {
                 if (e.target.closest('.delete-chat-btn')) return;
                 loadChat(chat.id, chat.title);
             };
-            
+
             const contentDiv = document.createElement('div');
             contentDiv.className = 'history-item-content';
-            
+
             const icon = document.createElement('i');
             icon.setAttribute('data-lucide', 'message-square');
             icon.style.cssText = 'width: 14px; height: 14px; vertical-align: middle; margin-right: 8px;';
-            
+
             contentDiv.appendChild(icon);
             contentDiv.appendChild(document.createTextNode(chat.title));
-            
+
             item.appendChild(contentDiv);
-            
+
             const deleteBtn = document.createElement('button');
             deleteBtn.className = 'delete-chat-btn';
             deleteBtn.onclick = () => deleteChat(chat.id);
             deleteBtn.innerHTML = '<i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>';
-            
+
             item.appendChild(deleteBtn);
             chatHistory.appendChild(item);
         });
@@ -411,25 +411,25 @@ async function loadChat(chatId, title) {
     currentChatTitle.textContent = title;
     welcomeScreen.style.display = 'none';
     messagesContainer.innerHTML = '';
-    
+
     // Clear pending structural attachments instantly on switch
     attachmentContainer.style.display = 'none';
     fileUpload.value = '';
-    
+
     // Apply active class in-place — avoids a redundant full sidebar refetch
     document.querySelectorAll('.history-item').forEach(item => {
         item.classList.toggle('active', item.dataset.chatId === chatId);
     });
-    
+
     try {
         const response = await fetch(`${API_URL}/api/chats/${chatId}/messages`);
         if (!response.ok) throw new Error(`Server error: ${response.status}`);
         const messages = await response.json();
-        
+
         messages.forEach(msg => {
             appendMessage(msg.role, msg.content);
         });
-        
+
         closeSidebar();
     } catch (error) {
         console.error('Error loading chat:', error);
@@ -441,7 +441,7 @@ async function startNewChat() {
     currentChatTitle.textContent = 'New Conversation';
     messagesContainer.innerHTML = '';
     welcomeScreen.style.display = 'flex';
-    
+
     // Clear pending structural attachments instantly on fresh slate
     attachmentContainer.style.display = 'none';
     fileUpload.value = '';
@@ -449,7 +449,7 @@ async function startNewChat() {
     closeSidebar();
     chatInput.value = '';
     chatInput.focus();
-    
+
     document.querySelectorAll('.history-item').forEach(item => {
         item.classList.remove('active');
     });
@@ -510,32 +510,32 @@ function closeSidebar() {
 async function sendMessage(text = null) {
     const content = text || chatInput.value.trim();
     if (!content) return;
-    
+
     // UI Updates
     if (welcomeScreen.style.display !== 'none') {
         welcomeScreen.style.display = 'none';
     }
-    
+
     appendMessage('user', content);
     chatInput.value = '';
     chatInput.style.height = 'auto';
-    
+
     // Check if we need to show the model switching state
     if (sendBtn.disabled) {
         alert("Please wait for the model to finish loading.");
         return;
     }
-    
+
     const typingIndicator = appendTypingIndicator();
     // A new message always snaps to the bottom; reset the user-scroll flag so
     // the typing indicator and first tokens are visible.
     _userScrolledUp = false;
     scrollToBottom();
-    
+
     // Toggle buttons
     sendBtn.style.display = 'none';
     stopBtn.style.display = 'flex';
-    
+
     let requestChatId = currentChatId;
     abortController = new AbortController();
 
@@ -551,7 +551,7 @@ async function sendMessage(text = null) {
         item.style.opacity = '0.5';
     });
     modelSelect.disabled = true;
-    
+
     try {
         const response = await fetch(`${API_URL}/api/chat${requestChatId ? `?chat_id=${requestChatId}` : ''}`, {
             method: 'POST',
@@ -559,22 +559,22 @@ async function sendMessage(text = null) {
             body: JSON.stringify({ message: content }),
             signal: abortController.signal
         });
-        
+
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
-        
+
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            
+
             const chunk = decoder.decode(value);
             const lines = chunk.split('\n');
-            
+
             for (const line of lines) {
                 if (line.startsWith('data: ')) {
                     const dataStr = line.slice(6).trim();
                     if (dataStr === '[DONE]') continue;
-                    
+
                     try {
                         const data = JSON.parse(dataStr);
                         if (data.chat_id && !requestChatId) {
@@ -590,17 +590,17 @@ async function sendMessage(text = null) {
                         if (data.replace || data.content) {
                             if (data.replace) fullContent = data.replace;
                             if (data.content) fullContent += data.content;
-                            
+
                             if (currentChatId === requestChatId) {
                                 if (!contentDiv || !document.contains(contentDiv)) {
                                     if (typingIndicator && document.contains(typingIndicator)) typingIndicator.remove();
-                                    
+
                                     assistantMessageDiv = document.createElement('div');
                                     assistantMessageDiv.className = 'message assistant';
                                     contentDiv = document.createElement('div');
                                     contentDiv.className = 'message-content';
                                     assistantMessageDiv.appendChild(contentDiv);
-                                    
+
                                     const actionsDiv = document.createElement('div');
                                     actionsDiv.className = 'message-actions';
                                     actionsDiv.style.cssText = 'margin-top: 5px; opacity: 0.5; display: flex; gap: 10px;';
@@ -621,7 +621,6 @@ async function sendMessage(text = null) {
                                         streamRenderTimer = null;
                                         contentDiv.innerHTML = renderMarkdown(fullContent);
                                         lucide.createIcons({ elements: Array.from(contentDiv.querySelectorAll('[data-lucide]')) });
-                                        scrollToBottom();
                                     }, 50);
                                 }
                             }
@@ -633,12 +632,12 @@ async function sendMessage(text = null) {
                 }
             }
         }
-        
+
         // Auto-speak if toggled
         if (autoSpeakToggle.checked && currentChatId === requestChatId) {
             speakResponse(fullContent);
         }
-        
+
     } catch (error) {
         if (error.name === 'AbortError') {
             console.log('Generation aborted');
@@ -659,7 +658,7 @@ async function sendMessage(text = null) {
         sendBtn.style.display = 'flex';
         stopBtn.style.display = 'none';
         abortController = null;
-        
+
         // Release UI locks
         document.querySelectorAll('#chat-history, .new-chat-btn, #add-model-btn').forEach(item => {
             item.style.pointerEvents = 'auto';
@@ -702,7 +701,6 @@ function appendMessage(role, content) {
     `;
     messagesContainer.appendChild(div);
     lucide.createIcons({ elements: Array.from(div.querySelectorAll('[data-lucide]')) });
-    scrollToBottom();
 }
 
 function appendTypingIndicator() {
@@ -729,8 +727,8 @@ messagesContainer.addEventListener('scroll', () => {
         messagesContainer.scrollHeight -
         messagesContainer.scrollTop -
         messagesContainer.clientHeight;
-    // Consider "at bottom" if within 150px (handles rounding & small bounces)
-    _userScrolledUp = distanceFromBottom > 150;
+    // Consider "at bottom" if within 10px (handles rounding & sub-pixel alignment)
+    _userScrolledUp = distanceFromBottom > 10;
 }, { passive: true });
 
 function scrollToBottom(force = false) {
@@ -760,23 +758,23 @@ if ('webkitSpeechRecognition' in window) {
     recognition.continuous = false;
     recognition.interimResults = false;
     recognition.lang = 'en-US';
-    
+
     recognition.onstart = () => {
         isRecording = true;
         voiceBtn.classList.add('recording');
     };
-    
+
     recognition.onresult = (event) => {
         const transcript = event.results[0][0].transcript;
         chatInput.value = transcript;
         sendMessage(transcript);
     };
-    
+
     recognition.onerror = (event) => {
         console.error('Speech recognition error:', event.error);
         stopRecording();
     };
-    
+
     recognition.onend = () => {
         stopRecording();
     };
@@ -787,7 +785,7 @@ function toggleRecording() {
         alert('Speech recognition is not supported in this browser.');
         return;
     }
-    
+
     if (isRecording) {
         recognition.stop();
     } else {
@@ -806,7 +804,7 @@ async function loadModels() {
     try {
         const response = await fetch(`${API_URL}/api/models`);
         const models = await response.json();
-        
+
         modelSelect.innerHTML = '';
         models.forEach(m => {
             const option = document.createElement('option');
@@ -814,7 +812,7 @@ async function loadModels() {
             option.textContent = m.name.split('/').pop(); // Show only the model name
             option.selected = m.active;
             modelSelect.appendChild(option);
-            
+
             if (m.active) {
                 modelBadge.textContent = option.textContent;
             }
@@ -827,23 +825,23 @@ async function loadModels() {
 async function addNewModel() {
     const name = newModelInput.value.trim();
     if (!name) return;
-    
+
     if (!name.includes('mlx-community')) {
         alert("Model must be from the 'mlx-community' organization on Hugging Face.");
         return;
     }
-    
+
     const originalBadgeText = modelBadge.textContent;
     modelBadge.textContent = "Downloading...";
     modelBadge.style.opacity = "0.5";
-    
+
     try {
         const response = await fetch(`${API_URL}/api/models`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name })
         });
-        
+
         if (response.ok) {
             newModelInput.value = '';
             loadModels();
@@ -888,7 +886,7 @@ async function switchModel(modelName) {
         }
 
         // Consume the SSE progress stream
-        const reader  = response.body.getReader();
+        const reader = response.body.getReader();
         const decoder = new TextDecoder();
 
         outer: while (true) {
@@ -916,7 +914,7 @@ async function switchModel(modelName) {
                         alert(data.message || 'Error loading model');
                         setBadge(originalBadgeText, false);
                     }
-                } catch (_) {}
+                } catch (_) { }
             }
         }
     } catch (error) {
@@ -934,17 +932,17 @@ async function switchModel(modelName) {
 async function copyCode(elementId) {
     const codeElement = document.getElementById(elementId);
     if (!codeElement) return;
-    
+
     const text = codeElement.innerText;
     const container = codeElement.closest('.code-container');
     const btn = container.querySelector('.copy-btn');
-    
+
     try {
         await navigator.clipboard.writeText(text);
-        
+
         // Visual feedback
         btn.classList.add('copied');
-        
+
         // Find current icon (might be i or svg)
         let icon = btn.querySelector('i, svg');
         if (icon) {
@@ -954,7 +952,7 @@ async function copyCode(elementId) {
             icon.replaceWith(newIcon);
             lucide.createIcons({ elements: [newIcon] });
         }
-        
+
         setTimeout(() => {
             btn.classList.remove('copied');
             let currentIcon = btn.querySelector('i, svg');
