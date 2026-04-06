@@ -906,6 +906,9 @@ async function switchModel(modelName) {
                     } else if (data.status === 'loading') {
                         setBadge(data.message || 'Loading...');
                     } else if (data.status === 'ready') {
+                        if (data.fallback) {
+                            alert(`Error loading model "${data.requested.split('/').pop()}": ${data.error}\n\nFalling back to default model: ${data.model}`);
+                        }
                         setBadge(data.model, false);
                         console.log(`Switched to ${data.full}`);
                         // Refresh the sidebar dropdown to highlight the new active model

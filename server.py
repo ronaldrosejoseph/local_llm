@@ -109,7 +109,8 @@ def get_db_connection():
     return conn
 
 # Model loading logic
-def load_active_model(override_name: str = None):
+def load_active_model(override_name: str = None) -> tuple[bool, str]:
+    """Loads the specified or default model. Returns (success, actual_model_name)."""
     global MODEL_NAME, model, tokenizer, processor, IS_VLM
     
     if override_name:
@@ -138,15 +139,26 @@ def load_active_model(override_name: str = None):
             processor = None
             
         print(f"Model {MODEL_NAME} loaded successfully (VLM: {IS_VLM}).")
+        return True, MODEL_NAME
     except Exception as e:
-        print(f"Error loading model {MODEL_NAME}: {e}")
+        error_msg = str(e)
+        print(f"Error loading model {MODEL_NAME}: {error_msg}")
         # If the active model fails, try to load the default
         if MODEL_NAME != DEFAULT_MODEL:
             print(f"Falling back to default model: {DEFAULT_MODEL}")
-            load_active_model(override_name=DEFAULT_MODEL) # Pass fallback name
+            # Update DB to reflect fallback so UI and future loads are correct
+            with closing(get_db_connection()) as conn:
+                conn.execute("UPDATE models SET active = 0")
+                conn.execute("UPDATE models SET active = 1 WHERE name = ?", (DEFAULT_MODEL,))
+                conn.commit()
+            
+            # Recursive call to load the default model
+            _, final_name = load_active_model(override_name=DEFAULT_MODEL)
+            return False, final_name
         else:
             print("CRITICAL: Both active and default models failed to load. Server will be non-functional.")
             model, tokenizer, processor = None, None, None
+            return False, MODEL_NAME
 
 # Initial load at startup
 load_active_model()
@@ -839,16 +851,26 @@ async def set_active_model(model_data: ModelAdd):
     def load_thread():
         global MODEL_NAME, model, tokenizer, processor, IS_VLM
         try:
-            # Update DB active flag
+            # Update DB active flag optimistically (load_active_model will correct it on failure)
             with closing(get_db_connection()) as conn:
                 conn.execute("UPDATE models SET active = 0")
                 conn.execute("UPDATE models SET active = 1 WHERE name = ?", (model_data.name,))
                 conn.commit()
             
             # Use the centralized helper to handle VLM vs LLM and global state
-            load_active_model(override_name=model_data.name)
+            success, actual_name = load_active_model(override_name=model_data.name)
             
-            result_q.put({"status": "ready", "model": MODEL_NAME.split("/")[-1], "full": MODEL_NAME})
+            payload = {
+                "status": "ready",
+                "model": actual_name.split("/")[-1],
+                "full": actual_name
+            }
+            if not success:
+                payload["fallback"] = True
+                payload["requested"] = model_data.name
+                payload["error"] = "Model failed to load and was reverted to default." # generic error for UI
+            
+            result_q.put(payload)
         except Exception as e:
             # Restore previous active model in DB
             try:
@@ -859,7 +881,7 @@ async def set_active_model(model_data: ModelAdd):
                     conn.commit()
             except Exception:
                 pass
-            result_q.put({"status": "error", "message": str(e)})
+            result_q.put({"status": "error", "message": f"Critical error during model switch: {str(e)}"})
 
     threading.Thread(target=load_thread, daemon=True).start()
 
