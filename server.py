@@ -82,7 +82,7 @@ def get_embedder():
             return None
     return embedder_model
 
-def pdf_to_images(pdf_content: bytes, chat_id: str):
+def pdf_to_images(pdf_content: bytes, chat_id: str, start_page: int = 0, limit: int = 5):
     """Converts PDF pages to images for Vision model consumption."""
     import fitz # PyMuPDF
     import uuid
@@ -91,8 +91,8 @@ def pdf_to_images(pdf_content: bytes, chat_id: str):
     doc = fitz.open(stream=pdf_content, filetype="pdf")
     image_paths = []
     
-    # Limit to first 5 pages for VRAM safety/latency
-    for i in range(min(5, len(doc))):
+    # Limit to current window for VRAM safety/latency
+    for i in range(start_page, min(start_page + limit, len(doc))):
         page = doc.load_page(i)
         pix = page.get_pixmap(matrix=fitz.Matrix(2, 2)) # 2x zoom for clarity
         img_name = f"pdf_{chat_id[:8]}_{i}_{uuid.uuid4().hex[:6]}.png"
@@ -100,8 +100,9 @@ def pdf_to_images(pdf_content: bytes, chat_id: str):
         pix.save(img_path)
         image_paths.append(img_path)
         
+    total_pages = len(doc)
     doc.close()
-    return image_paths
+    return image_paths, total_pages
 
 # Database helper functions
 def get_db_connection():
@@ -268,9 +269,25 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
                 # SCANNED/IMAGE PDF: Use Vision model if active
                 if IS_VLM:
                     print("No digital text found (scanned): converting PDF to images via fitz...")
-                    img_paths = pdf_to_images(content, chat_id)
+                    
+                    # Save PDF for on-demand extraction of further pages
+                    os.makedirs("uploads", exist_ok=True)
+                    pdf_path = f"uploads/{chat_id}.pdf"
+                    with open(pdf_path, "wb") as f:
+                        f.write(content)
+                        
+                    img_paths, total_pages = pdf_to_images(content, chat_id, start_page=0, limit=5)
                     if chat_id not in document_store:
                         document_store[chat_id] = []
+                    
+                    # Store PDF metadata for pagination reference
+                    document_store[chat_id].append({
+                        "type": "pdf_metadata", 
+                        "path": pdf_path, 
+                        "total_pages": total_pages,
+                        "processed_pages": len(img_paths)
+                    })
+                        
                     for p in img_paths:
                         document_store[chat_id].append({"type": "image", "path": p})
                     
@@ -281,7 +298,7 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
                                      (chat_id, "user", f"[Attached Scanned Document: {file.filename}]"))
                         conn.commit()
 
-                    return {"status": "ok", "chunks": len(img_paths), "filename": file.filename, "vision": True}
+                    return {"status": "ok", "chunks": len(img_paths), "total_pages": total_pages, "filename": file.filename, "vision": True}
                 else:
                     # No Vision + Scanned PDF = Empty RAG (existing fallback)
                     print("No digital text and no Vision model active. Extracting minimal text.")
@@ -385,10 +402,19 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
     
     # --- RAG Pagination Detection ---
     is_next_command = False
-    # Detect patterns like "next 50", "/next", "more context", "next page"
-    if re.search(r'(\bnext\b|\bmore\b)\s+(\b50\b|\bcontext\b|\bpage\b|\bchunks\b)', message_content.lower()) or message_content.strip().startswith('/next'):
+    # Detect patterns like "next 5", "next 50", "/next", "more context", "next page"
+    if re.search(r'(\bnext\b|\bmore\b)\s+(\b\d+\b|\bcontext\b|\bpage\b|\bchunks\b)', message_content.lower()) or message_content.strip().startswith('/next'):
         is_next_command = True
-        rag_offsets[chat_id] = rag_offsets.get(chat_id, 0) + 50
+        
+        # Determine increment: 5 for vision PDFs, 50 for text
+        increment = 50
+        if chat_id in document_store:
+            for item in document_store[chat_id]:
+                if item.get("type") == "pdf_metadata":
+                    increment = 5
+                    break
+        
+        rag_offsets[chat_id] = rag_offsets.get(chat_id, 0) + increment
         print(f"Pagination triggered for {chat_id}: New offset = {rag_offsets[chat_id]}")
     else:
         # Reset pagination for any new specific question to keep relevance high
@@ -658,6 +684,36 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
     # Hoist RAG status variables for event_generator
     rag_meta = None
     
+    # --- Vision PDF Pagination & Extraction (On-demand) ---
+    vision_pdf = None
+    if chat_id in document_store:
+        for item in document_store[chat_id]:
+            if item.get("type") == "pdf_metadata":
+                vision_pdf = item
+                break
+    
+    if vision_pdf:
+        offset = rag_offsets.get(chat_id, 0)
+        limit = 5
+        total_pages = vision_pdf["total_pages"]
+        
+        # Extract more pages if current offset window isn't yet processed
+        if (offset + limit) > vision_pdf["processed_pages"] and vision_pdf["processed_pages"] < total_pages:
+            try:
+                print(f"Vision: Extra extraction triggered for page range {vision_pdf['processed_pages']} to {min(offset + limit, total_pages)}...")
+                with open(vision_pdf["path"], "rb") as f:
+                    pdf_bytes = f.read()
+                
+                new_imgs, _ = pdf_to_images(pdf_bytes, chat_id, start_page=vision_pdf["processed_pages"], limit=(offset + limit) - vision_pdf["processed_pages"])
+                for p in new_imgs:
+                    document_store[chat_id].append({"type": "image", "path": p})
+                vision_pdf["processed_pages"] += len(new_imgs)
+            except Exception as e:
+                print(f"Vision background extraction error: {e}")
+        
+        # Limit window for UI and Model
+        rag_meta = {"offset": offset, "total": total_pages, "limit": limit}
+    
     for i, h in enumerate(history):
         content = h["content"]
         
@@ -667,44 +723,45 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
             if chat_id in document_store and document_store[chat_id]:
                 try:
                     emb_model = get_embedder()
-                    if not emb_model:
-                        raise Exception("Embedder model not available.")
-                        
-                    query = content.replace("/web", "").strip()
-                    query_emb = emb_model.encode([query])[0]
+                    # Only proceed with text RAG if embeddings are available and we have text chunks
+                    has_text_docs = any(d.get("emb") is not None for d in document_store[chat_id])
                     
-                    docs = [d for d in document_store[chat_id] if d.get("emb") is not None]
-                    if docs:
-                        doc_embs = [d['emb'] for d in docs]
+                    if emb_model and has_text_docs:
+                        query = content.replace("/web", "").strip()
+                        query_emb = emb_model.encode([query])[0]
                         
-                        q_norm = query_emb / np.linalg.norm(query_emb)
-                        d_norms = doc_embs / np.linalg.norm(doc_embs, axis=1)[:, np.newaxis]
-                        similarities = np.dot(d_norms, q_norm)
-                        
-                        # Sorting all available chunks by descending similarity
-                        all_indices = np.argsort(similarities)[::-1]
-                        total_chunks = len(all_indices)
-                        
-                        # Windowing Logic
-                        offset = rag_offsets.get(chat_id, 0)
-                        # Ensure we don't exceed the total length
-                        if offset >= total_chunks: offset = 0 
-                        
-                        limit = 50
-                        top_indices = all_indices[offset : offset + limit]
-                        rag_meta = {"offset": offset, "total": total_chunks, "limit": limit}
-                        
-                        doc_context = f"### Attached Document Context (Chunks {offset+1} to {min(offset+limit, total_chunks)} of {total_chunks}) ###\n"
-                        if offset > 0:
-                            doc_context += f"System note: You are viewing the NEXT set of relevant context. Previous {offset} chunks have been hidden to save memory.\n\n"
-                        
-                        for idx in top_indices:
-                            doc_context += f"- {docs[idx]['text']}\n\n"
-                        
-                        if total_chunks > (offset + limit):
-                            doc_context += f"\nNote to model: There are {total_chunks - (offset + limit)} more chunks available. If the user asks for 'more' or 'next', inform them that you can advance the context window.\n"
+                        docs = [d for d in document_store[chat_id] if d.get("emb") is not None]
+                        if docs:
+                            doc_embs = [d['emb'] for d in docs]
+                            
+                            q_norm = query_emb / np.linalg.norm(query_emb)
+                            d_norms = doc_embs / np.linalg.norm(doc_embs, axis=1)[:, np.newaxis]
+                            similarities = np.dot(d_norms, q_norm)
+                            
+                            # Sorting all available chunks by descending similarity
+                            all_indices = np.argsort(similarities)[::-1]
+                            total_chunks = len(all_indices)
+                            
+                            # Windowing Logic
+                            offset = rag_offsets.get(chat_id, 0)
+                            # Ensure we don't exceed the total length (reset if needed)
+                            if offset >= total_chunks: offset = 0 
+                            
+                            limit = 50
+                            top_indices = all_indices[offset : offset + limit]
+                            rag_meta = {"offset": offset, "total": total_chunks, "limit": limit}
+                            
+                            doc_context = f"### Attached Document Context (Chunks {offset+1} to {min(offset+limit, total_chunks)} of {total_chunks}) ###\n"
+                            if offset > 0:
+                                doc_context += f"System note: You are viewing the NEXT set of relevant context. Previous {offset} chunks have been hidden to save memory.\n\n"
+                            
+                            for idx in top_indices:
+                                doc_context += f"- {docs[idx]['text']}\n\n"
+                            
+                            if total_chunks > (offset + limit):
+                                doc_context += f"\nNote to model: There are {total_chunks - (offset + limit)} more chunks available. If the user asks for 'more' or 'next', inform them that you can advance the context window.\n"
                     else:
-                        print("RAG: No indexable documents found for this chat.")
+                        print("RAG: Text embedding retrieval skipped (likely vision PDF or missing embedder).")
                 except Exception as e:
                     print(f"RAG retrieval skipped: {e}")
 
@@ -731,7 +788,14 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                 # Check for images in document_store
                 image_paths = []
                 if chat_id in document_store:
-                    image_paths = [d["path"] for d in document_store[chat_id] if d.get("type") == "image"]
+                    all_images = [d["path"] for d in document_store[chat_id] if d.get("type") == "image"]
+                    # If we found images, we apply pagination windowing (5 images at a time)
+                    if all_images:
+                        offset = rag_offsets.get(chat_id, 0)
+                        limit = 5
+                        if offset >= len(all_images): offset = 0
+                        image_paths = all_images[offset : offset + limit]
+                        print(f"VLM: Sending {len(image_paths)} images (offset {offset}) to model.")
                 
                 # VLM prompt formatting needs the MESSAGES list, not the pre-templated string
                 formatted_prompt = apply_vlm_template(
