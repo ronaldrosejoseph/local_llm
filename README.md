@@ -96,7 +96,7 @@ Control your FastAPI application running in the background natively:
 - **Backend**: FastAPI, MLX (`mlx_lm`, `mlx_vlm`, `mflux`), PyTorch, Sentence-Transformers
 - **Frontend**: Vanilla HTML/CSS/JS, DOMPurify (XSS Protection), Lucide Icons
 - **Storage**: SQLite natively tracking chat IDs, messages, and model registries.
-- **Default Baseline Architecture**: `mlx-community/Llama-3.2-1B-Instruct-4bit`
+- **Default Baseline Architecture**: `mlx-community/gemma-4-e2b-it-4bit`
 
 ---
 
@@ -104,9 +104,8 @@ Control your FastAPI application running in the background natively:
 
 The application dynamically detects model environments. You can add new ones by pasting their Hugging Face identifier into the custom UI settings modal:
 
-- **Llama 3.2 1B (Default)**: `mlx-community/Llama-3.2-1B-Instruct-4bit`
-- **Gemma 3 4B**: `mlx-community/gemma-4-e4b-it-4bit`
-- **Qwen 2.5 VL 7B**: `mlx-community/Qwen2.5-VL-7B-Instruct-4bit`
+- **Gemma 4 2B (Default)**: `mlx-community/gemma-4-e2b-it-4bit`
+- **Gemma 4 4B**: `mlx-community/gemma-4-e4b-it-4bit`
 
 > [!TIP]
 > For coding tasks, use `mlx-community/Qwen2.5-Coder-7B-Instruct-4bit`

@@ -28,7 +28,7 @@ import numpy as np
 app = FastAPI()
 
 # Global state for model and tokenizer
-DEFAULT_MODEL = "mlx-community/Llama-3.2-1B-Instruct-4bit"
+DEFAULT_MODEL = "mlx-community/gemma-4-e2b-it-4bit"
 MODEL_NAME = None
 model = None
 tokenizer = None
