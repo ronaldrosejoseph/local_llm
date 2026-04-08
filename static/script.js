@@ -179,6 +179,9 @@ function applyConfigToUI(cfg) {
     set('cfg-temperature', 'val-temperature', cfg.temperature);
     set('cfg-top-p', 'val-top-p', cfg.top_p);
     set('cfg-rep-penalty', 'val-rep-penalty', cfg.repetition_penalty);
+    set('cfg-pdf-text-batch', 'val-pdf-text-batch', cfg.pdf_text_pages_per_batch || 50);
+    set('cfg-pdf-image-batch', 'val-pdf-image-batch', cfg.pdf_image_pages_per_batch || 5);
+    set('cfg-image-res', null, cfg.image_generation_resolution || "720x720");
 }
 
 // Debounced PATCH so we don't spam the server on every slider tick
@@ -216,6 +219,17 @@ document.getElementById('cfg-top-p').addEventListener('input', function () {
 document.getElementById('cfg-rep-penalty').addEventListener('input', function () {
     document.getElementById('val-rep-penalty').textContent = parseFloat(this.value).toFixed(2);
     scheduleConfigSave({ repetition_penalty: parseFloat(this.value) });
+});
+document.getElementById('cfg-pdf-text-batch').addEventListener('input', function () {
+    document.getElementById('val-pdf-text-batch').textContent = this.value;
+    scheduleConfigSave({ pdf_text_pages_per_batch: parseInt(this.value) });
+});
+document.getElementById('cfg-pdf-image-batch').addEventListener('input', function () {
+    document.getElementById('val-pdf-image-batch').textContent = this.value;
+    scheduleConfigSave({ pdf_image_pages_per_batch: parseInt(this.value) });
+});
+document.getElementById('cfg-image-res').addEventListener('change', function () {
+    scheduleConfigSave({ image_generation_resolution: this.value });
 });
 
 // --- Settings: Model Library ---

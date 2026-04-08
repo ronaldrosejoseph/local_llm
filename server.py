@@ -44,6 +44,9 @@ DEFAULT_CONFIG = {
     "temperature": 0.7,
     "top_p": 0.9,
     "repetition_penalty": 1.1,
+    "pdf_text_pages_per_batch": 50,
+    "pdf_image_pages_per_batch": 5,
+    "image_generation_resolution": "720x720"
 }
 
 def load_config() -> dict:
@@ -189,6 +192,9 @@ class ConfigUpdate(BaseModel):
     temperature: Optional[float] = None
     top_p: Optional[float] = None
     repetition_penalty: Optional[float] = None
+    pdf_text_pages_per_batch: Optional[int] = None
+    pdf_image_pages_per_batch: Optional[int] = None
+    image_generation_resolution: Optional[str] = None
 
 @app.get("/api/chats")
 def get_chats():
@@ -276,7 +282,8 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
                     with open(pdf_path, "wb") as f:
                         f.write(content)
                         
-                    img_paths, total_pages = pdf_to_images(content, chat_id, start_page=0, limit=5)
+                    limit_val = load_config().get("pdf_image_pages_per_batch", 5)
+                    img_paths, total_pages = pdf_to_images(content, chat_id, start_page=0, limit=limit_val)
                     if chat_id not in document_store:
                         document_store[chat_id] = []
                     
@@ -406,12 +413,12 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
     if re.search(r'(\bnext\b|\bmore\b)\s+(\b\d+\b|\bcontext\b|\bpage\b|\bchunks\b)', message_content.lower()) or message_content.strip().startswith('/next'):
         is_next_command = True
         
-        # Determine increment: 5 for vision PDFs, 50 for text
-        increment = 50
+        cfg_d = load_config()
+        increment = cfg_d.get("pdf_text_pages_per_batch", 50)
         if chat_id in document_store:
             for item in document_store[chat_id]:
                 if item.get("type") == "pdf_metadata":
-                    increment = 5
+                    increment = cfg_d.get("pdf_image_pages_per_batch", 5)
                     break
         
         rag_offsets[chat_id] = rag_offsets.get(chat_id, 0) + increment
@@ -429,7 +436,8 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
         
         async def image_generator():
             yield f'data: {json.dumps({"chat_id": chat_id})}\n\n'
-            yield f'data: {json.dumps({"content": "### 🎨 Diffusers Pipeline Active\n\n**Booting Apple Silicon GPUs...**"})}\n\n'
+            msg_data = {"content": "### 🎨 Diffusers Pipeline Active\n\n**Booting Apple Silicon GPUs...**"}
+            yield f'data: {json.dumps(msg_data)}\n\n'
             
             import threading
             import queue
@@ -466,12 +474,15 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                     )
                     flux.callbacks.register(ProgressCB())
                     
+                    cfg_gen = load_config()
+                    res_parts = cfg_gen.get("image_generation_resolution", "720x720").split("x")
+                    w, h = int(res_parts[0]), int(res_parts[1])
                     image = flux.generate_image(
                         seed=int(time.time()),
                         prompt=prompt,
                         num_inference_steps=4,
-                        width=720,
-                        height=720
+                        width=w,
+                        height=h
                     )
                     
                     img_path = f"static/images/{img_name}"
@@ -510,10 +521,12 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                         status = f"### 🎨 Diffusers Pipeline Active\n\n**Generating image natively...**\n\n`{bar}` **{pct}%**\n\n*(Processing tensors...)*"
                         yield f'data: {json.dumps({"replace": status})}\n\n'
                     elif "image" in msg:
-                        yield f'data: {json.dumps({"replace": f"![Generated Image](/images/{msg['image']})"})}\n\n'
+                        img_val = msg['image']
+                        yield f'data: {json.dumps({"replace": f"![Generated Image](/images/{img_val})"})}\n\n'
                         break
                     elif "error" in msg:
-                        yield f'data: {json.dumps({"replace": f"**Error:** {msg['error']}"})}\n\n'
+                        err_val = msg['error']
+                        yield f'data: {json.dumps({"replace": f"**Error:** {err_val}"})}\n\n'
                         break
                 except queue.Empty:
                     await asyncio.sleep(0.2)
@@ -546,7 +559,8 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                 yield 'data: [DONE]\n\n'
                 return
                 
-            yield f'data: {json.dumps({"content": "### 🎨 Diffusers Img2Img Active\n\n**Booting Apple Silicon GPUs...**"})}\n\n'
+            msg_data = {"content": "### 🎨 Diffusers Img2Img Active\n\n**Booting Apple Silicon GPUs...**"}
+            yield f'data: {json.dumps(msg_data)}\n\n'
             
             import threading
             import queue
@@ -583,12 +597,15 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                     )
                     flux.callbacks.register(ProgressCB())
                     
+                    cfg_gen = load_config()
+                    res_parts = cfg_gen.get("image_generation_resolution", "720x720").split("x")
+                    w, h = int(res_parts[0]), int(res_parts[1])
                     image = flux.generate_image(
                         seed=int(time.time()),
                         prompt=prompt,
                         num_inference_steps=8,
-                        width=720,
-                        height=720,
+                        width=w,
+                        height=h,
                         image_path=source_image_path,
                         image_strength=0.15
                     )
@@ -629,10 +646,12 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                         status = f"### 🎨 Diffusers Img2Img Active\n\n**Editing image natively...**\n\n`{bar}` **{pct}%**\n\n*(Transforming matrices...)*"
                         yield f'data: {json.dumps({"replace": status})}\n\n'
                     elif "image" in msg:
-                        yield f'data: {json.dumps({"replace": f"![Edited Image](/images/{msg['image']})"})}\n\n'
+                        img_val = msg['image']
+                        yield f'data: {json.dumps({"replace": f"![Edited Image](/images/{img_val})"})}\n\n'
                         break
                     elif "error" in msg:
-                        yield f'data: {json.dumps({"replace": f"**Error:** {msg['error']}"})}\n\n'
+                        err_val = msg['error']
+                        yield f'data: {json.dumps({"replace": f"**Error:** {err_val}"})}\n\n'
                         break
                 except queue.Empty:
                     await asyncio.sleep(0.2)
@@ -694,7 +713,7 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
     
     if vision_pdf:
         offset = rag_offsets.get(chat_id, 0)
-        limit = 5
+        limit = load_config().get("pdf_image_pages_per_batch", 5)
         total_pages = vision_pdf["total_pages"]
         
         # Extract more pages if current offset window isn't yet processed
@@ -747,7 +766,7 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                             # Ensure we don't exceed the total length (reset if needed)
                             if offset >= total_chunks: offset = 0 
                             
-                            limit = 50
+                            limit = load_config().get("pdf_text_pages_per_batch", 50)
                             top_indices = all_indices[offset : offset + limit]
                             rag_meta = {"offset": offset, "total": total_chunks, "limit": limit}
                             
@@ -792,7 +811,7 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                     # If we found images, we apply pagination windowing (5 images at a time)
                     if all_images:
                         offset = rag_offsets.get(chat_id, 0)
-                        limit = 5
+                        limit = cfg.get("pdf_image_pages_per_batch", 5)
                         if offset >= len(all_images): offset = 0
                         image_paths = all_images[offset : offset + limit]
                         print(f"VLM: Sending {len(image_paths)} images (offset {offset}) to model.")
@@ -913,6 +932,12 @@ def update_config(data: ConfigUpdate):
         cfg["top_p"] = round(max(0.0, min(1.0, data.top_p)), 2)
     if data.repetition_penalty is not None:
         cfg["repetition_penalty"] = round(max(1.0, min(1.5, data.repetition_penalty)), 2)
+    if data.pdf_text_pages_per_batch is not None:
+        cfg["pdf_text_pages_per_batch"] = max(1, int(data.pdf_text_pages_per_batch))
+    if data.pdf_image_pages_per_batch is not None:
+        cfg["pdf_image_pages_per_batch"] = max(1, int(data.pdf_image_pages_per_batch))
+    if data.image_generation_resolution is not None:
+        cfg["image_generation_resolution"] = data.image_generation_resolution
     save_config(cfg)
     return cfg
 

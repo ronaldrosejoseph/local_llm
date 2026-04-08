@@ -2,5 +2,8 @@
   "max_tokens": 8192,
   "temperature": 0.7,
   "top_p": 0.9,
-  "repetition_penalty": 1.1
+  "repetition_penalty": 1.1,
+  "pdf_text_pages_per_batch": 50,
+  "pdf_image_pages_per_batch": 5,
+  "image_generation_resolution": "720x720"
 }
