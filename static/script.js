@@ -612,6 +612,30 @@ async function sendMessage(text = null) {
                             }
                         }
 
+                        // Image model badge updates (during /imagine and /edit)
+                        if (data.model_badge) {
+                            // Save the original badge text on first badge event so we can restore later
+                            if (!window._savedBadgeText) {
+                                window._savedBadgeText = modelBadge.textContent;
+                            }
+                            modelBadge.textContent = data.model_badge;
+                            modelBadge.style.opacity = data.model_badge_pulse ? '0.6' : '1';
+                            modelBadge.style.fontStyle = data.model_badge_pulse ? 'italic' : 'normal';
+                        }
+                        if (data.model_badge_restore) {
+                            // Restore the badge to the active text model
+                            if (window._savedBadgeText) {
+                                modelBadge.textContent = window._savedBadgeText;
+                                window._savedBadgeText = null;
+                            } else {
+                                // Fallback: re-read from the model select dropdown
+                                const activeOpt = modelSelect.options[modelSelect.selectedIndex];
+                                if (activeOpt) modelBadge.textContent = activeOpt.textContent;
+                            }
+                            modelBadge.style.opacity = '1';
+                            modelBadge.style.fontStyle = 'normal';
+                        }
+
                         if (data.chat_id && !requestChatId) {
                             requestChatId = data.chat_id;
                             if (!currentChatId) currentChatId = data.chat_id;
@@ -693,6 +717,14 @@ async function sendMessage(text = null) {
         sendBtn.style.display = 'flex';
         stopBtn.style.display = 'none';
         abortController = null;
+
+        // Safety-net: restore the model badge if the stream ended without a restore event
+        if (window._savedBadgeText) {
+            modelBadge.textContent = window._savedBadgeText;
+            modelBadge.style.opacity = '1';
+            modelBadge.style.fontStyle = 'normal';
+            window._savedBadgeText = null;
+        }
 
         // Release UI locks
         document.querySelectorAll('#chat-history, .new-chat-btn, #add-model-btn').forEach(item => {

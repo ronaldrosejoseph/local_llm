@@ -467,12 +467,18 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                             if time_steps and time_steps.total > 0:
                                 progress = int((time_steps.n / time_steps.total) * 100)
                                 q.put({"progress": progress})
-                                
+                    
+                    # Signal badge: downloading/loading the image model
+                    q.put({"model_badge": "Downloading FLUX...", "model_badge_pulse": True})
+                    
                     flux = Flux1(
                         model_config=ModelConfig.from_name(model_name="schnell"),
                         quantize=4
                     )
                     flux.callbacks.register(ProgressCB())
+                    
+                    # Signal badge: image model is now active
+                    q.put({"model_badge": "FLUX.1 schnell", "model_badge_pulse": False})
                     
                     cfg_gen = load_config()
                     res_parts = cfg_gen.get("image_generation_resolution", "720x720").split("x")
@@ -491,6 +497,9 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                     del flux
                     import gc; gc.collect()
                     import mlx.core as mx; mx.metal.clear_cache()
+                    
+                    # Signal badge: reloading text model
+                    q.put({"model_badge": "Reloading LLM...", "model_badge_pulse": True})
                     load_active_model()
                     
                     markdown_img = f"![{prompt}](/images/{img_name})\n"
@@ -502,8 +511,11 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                         )
                         conn.commit()
                         
+                    # Signal badge: restore to active text model
+                    q.put({"model_badge_restore": True})
                     q.put({"image": img_name})
                 except Exception as e:
+                    q.put({"model_badge_restore": True})
                     q.put({"error": str(e)})
 
             threading.Thread(target=generation_thread).start()
@@ -515,7 +527,11 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
             while True:
                 try:
                     msg = q.get_nowait()
-                    if "progress" in msg:
+                    if "model_badge" in msg:
+                        yield f'data: {json.dumps({"model_badge": msg["model_badge"], "model_badge_pulse": msg.get("model_badge_pulse", False)})}\n\n'
+                    elif "model_badge_restore" in msg:
+                        yield f'data: {json.dumps({"model_badge_restore": True})}\n\n'
+                    elif "progress" in msg:
                         pct = msg["progress"]
                         bar = get_ascii_bar(pct)
                         status = f"### 🎨 Diffusers Pipeline Active\n\n**Generating image natively...**\n\n`{bar}` **{pct}%**\n\n*(Processing tensors...)*"
@@ -590,12 +606,18 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                             if time_steps and time_steps.total > 0:
                                 progress = int((time_steps.n / time_steps.total) * 100)
                                 q.put({"progress": progress})
-                                
+                    
+                    # Signal badge: downloading/loading the image model
+                    q.put({"model_badge": "Downloading FLUX...", "model_badge_pulse": True})
+                    
                     flux = Flux1(
                         model_config=ModelConfig.from_name(model_name="schnell"),
                         quantize=4
                     )
                     flux.callbacks.register(ProgressCB())
+                    
+                    # Signal badge: image model is now active
+                    q.put({"model_badge": "FLUX.1 schnell", "model_badge_pulse": False})
                     
                     cfg_gen = load_config()
                     res_parts = cfg_gen.get("image_generation_resolution", "720x720").split("x")
@@ -616,6 +638,9 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                     del flux
                     import gc; gc.collect()
                     import mlx.core as mx; mx.metal.clear_cache()
+                    
+                    # Signal badge: reloading text model
+                    q.put({"model_badge": "Reloading LLM...", "model_badge_pulse": True})
                     load_active_model()
                     
                     markdown_img = f"![{prompt}](/images/{img_name})\n"
@@ -627,8 +652,11 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                         )
                         conn.commit()
                         
+                    # Signal badge: restore to active text model
+                    q.put({"model_badge_restore": True})
                     q.put({"image": img_name})
                 except Exception as e:
+                    q.put({"model_badge_restore": True})
                     q.put({"error": str(e)})
 
             threading.Thread(target=edit_thread).start()
@@ -640,7 +668,11 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
             while True:
                 try:
                     msg = q.get_nowait()
-                    if "progress" in msg:
+                    if "model_badge" in msg:
+                        yield f'data: {json.dumps({"model_badge": msg["model_badge"], "model_badge_pulse": msg.get("model_badge_pulse", False)})}\n\n'
+                    elif "model_badge_restore" in msg:
+                        yield f'data: {json.dumps({"model_badge_restore": True})}\n\n'
+                    elif "progress" in msg:
                         pct = msg["progress"]
                         bar = get_ascii_bar(pct)
                         status = f"### 🎨 Diffusers Img2Img Active\n\n**Editing image natively...**\n\n`{bar}` **{pct}%**\n\n*(Transforming matrices...)*"
