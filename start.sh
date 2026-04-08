@@ -18,24 +18,32 @@ fi
 
 echo "Starting LLM server..."
 
-# 1. Setup Python Environment
-if command -v brew >/dev/null 2>&1; then
-    if ! brew list python@3 &>/dev/null && ! brew list python3 &>/dev/null && ! brew list python &>/dev/null; then
-        echo "Python 3 not found. Installing via Homebrew..."
-        # Disable auto-update just for this install to speed it up
-        HOMEBREW_NO_AUTO_UPDATE=1 brew install python3
+# 1. Setup Homebrew if missing
+if ! command -v brew >/dev/null 2>&1; then
+    echo "Homebrew not found. Installing Homebrew..."
+    NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    
+    # Add Homebrew to PATH for the current session
+    if [[ $(uname -m) == "arm64" ]]; then
+        eval "$(/opt/homebrew/bin/brew shellenv)"
     else
-        # Swiftly check if the installed brew python is older than 3.14 without hitting the network
-        if ! $(brew --prefix)/bin/python3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 14) else 1)" 2>/dev/null; then
-            echo "Installed Python is older than 3.14. Upgrading via Homebrew..."
-            brew upgrade python3
-        fi
+        eval "$(/usr/local/bin/brew shellenv)"
     fi
-    PYTHON_CMD="$(brew --prefix)/bin/python3"
-else
-    echo "Homebrew not found. Falling back to system python3."
-    PYTHON_CMD="python3"
 fi
+
+# 2. Setup Python via Homebrew
+if ! brew list python@3 &>/dev/null && ! brew list python3 &>/dev/null && ! brew list python &>/dev/null; then
+    echo "Python 3 not found. Installing via Homebrew..."
+    # Disable auto-update just for this install to speed it up
+    HOMEBREW_NO_AUTO_UPDATE=1 brew install python3
+else
+    # Swiftly check if the installed brew python is older than 3.14 without hitting the network
+    if ! $(brew --prefix)/bin/python3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 14) else 1)" 2>/dev/null; then
+        echo "Installed Python is older than 3.14. Upgrading via Homebrew..."
+        brew upgrade python3
+    fi
+fi
+PYTHON_CMD="$(brew --prefix)/bin/python3"
 
 echo "Using Python: $($PYTHON_CMD --version)"
 

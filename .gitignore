@@ -38,9 +38,5 @@ database/*.db
 *.swo
 
 # Media & Generated Images
-static/images/
-*.png
-*.jpg
-*.jpeg
-*.webp
-*.gif
+static/images/*
+uploads/*
