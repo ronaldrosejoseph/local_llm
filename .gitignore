@@ -39,4 +39,4 @@ database/*.db
 
 # Media & Generated Images
 static/images/*
-uploads/*
+static/uploads/*

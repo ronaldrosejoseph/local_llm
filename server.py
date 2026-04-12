@@ -277,8 +277,8 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
                     print("No digital text found (scanned): converting PDF to images via fitz...")
                     
                     # Save PDF for on-demand extraction of further pages
-                    os.makedirs("uploads", exist_ok=True)
-                    pdf_path = f"uploads/{chat_id}.pdf"
+                    os.makedirs("static/uploads", exist_ok=True)
+                    pdf_path = f"static/uploads/{chat_id}.pdf"
                     with open(pdf_path, "wb") as f:
                         f.write(content)
                         
