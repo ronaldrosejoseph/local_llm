@@ -90,7 +90,7 @@ def pdf_to_images(pdf_content: bytes, chat_id: str, start_page: int = 0, limit: 
     import fitz # PyMuPDF
     import uuid
     
-    os.makedirs("static/images", exist_ok=True)
+    os.makedirs("static/uploads", exist_ok=True)
     doc = fitz.open(stream=pdf_content, filetype="pdf")
     image_paths = []
     
@@ -99,7 +99,7 @@ def pdf_to_images(pdf_content: bytes, chat_id: str, start_page: int = 0, limit: 
         page = doc.load_page(i)
         pix = page.get_pixmap(matrix=fitz.Matrix(2, 2)) # 2x zoom for clarity
         img_name = f"pdf_{chat_id[:8]}_{i}_{uuid.uuid4().hex[:6]}.png"
-        img_path = f"static/images/{img_name}"
+        img_path = f"static/uploads/{img_name}"
         pix.save(img_path)
         image_paths.append(img_path)
         
@@ -226,8 +226,8 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
 
         # 1. Handle Vision Image Uploads
         if safe_name.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-            os.makedirs("static/images", exist_ok=True)
-            img_path = f"static/images/tmp_{uuid.uuid4().hex[:8]}_{safe_name}"
+            os.makedirs("static/uploads", exist_ok=True)
+            img_path = f"static/uploads/tmp_{uuid.uuid4().hex[:8]}_{safe_name}"
             with open(img_path, "wb") as f:
                 f.write(content)
             
