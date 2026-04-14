@@ -24,6 +24,8 @@ from contextlib import closing
 import io
 import re
 import numpy as np
+import gc
+import mlx.core as mx
 
 app = FastAPI()
 
@@ -130,6 +132,13 @@ def load_active_model(override_name: str = None) -> tuple[bool, str]:
             MODEL_NAME = row["name"]
         
     print(f"Loading model {MODEL_NAME}...")
+    
+    # Close previous model and free VRAM
+    model = None
+    tokenizer = None
+    processor = None
+    gc.collect()
+    mx.clear_cache()
     
     try:
         # Step 1: Attempt to load as a Vision model (VLM)
