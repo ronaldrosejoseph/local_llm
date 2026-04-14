@@ -985,24 +985,85 @@ def get_models():
     return [{"id": m["id"], "name": m["name"], "active": bool(m["active"])} for m in models]
 
 @app.post("/api/models")
-def add_model(model_data: ModelAdd):
+async def add_model(model_data: ModelAdd):
+    """SSE stream that verifies, downloads, and adds a new model."""
     if "mlx-community" not in model_data.name:
         raise HTTPException(status_code=400, detail="Model must be from mlx-community")
     
-    # Verify model existence on Hugging Face
-    try:
-        api = HfApi()
-        api.model_info(repo_id=model_data.name)
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Model '{model_data.name}' not found on Hugging Face. Please check the name.")
-    
+    # Check if exists in DB first
     with closing(get_db_connection()) as conn:
+        row = conn.execute("SELECT name FROM models WHERE name = ?", (model_data.name,)).fetchone()
+        if row:
+            raise HTTPException(status_code=400, detail="Model already in library")
+
+    # HF Cache path detection
+    safe = model_data.name.replace("/", "--")
+    cache_dir = os.path.join(os.path.expanduser("~/.cache/huggingface/hub"), f"models--{safe}")
+    blobs_dir = os.path.join(cache_dir, "blobs")
+    snapshots_dir = os.path.join(cache_dir, "snapshots")
+    is_cached = os.path.isdir(snapshots_dir)
+
+    result_q: queue.Queue = queue.Queue()
+
+    def download_thread():
         try:
-            conn.execute("INSERT INTO models (name) VALUES (?)", (model_data.name,))
-            conn.commit()
-        except sqlite3.IntegrityError:
-            raise HTTPException(status_code=400, detail="Model already exists")
-    return {"status": "ok"}
+            # 1. Verify model existence on Hugging Face
+            api = HfApi()
+            api.model_info(repo_id=model_data.name)
+            
+            # 2. Trigger download (if not cached)
+            if not is_cached:
+                from huggingface_hub import snapshot_download
+                snapshot_download(repo_id=model_data.name)
+            
+            # 3. Add to DB
+            with closing(get_db_connection()) as conn:
+                try:
+                    conn.execute("INSERT INTO models (name) VALUES (?)", (model_data.name,))
+                    conn.commit()
+                except sqlite3.IntegrityError:
+                    # Model might have been added while downloading or already existed
+                    pass
+            
+            result_q.put({"status": "ready", "model": model_data.name.split("/")[-1], "full": model_data.name})
+        except Exception as e:
+            result_q.put({"status": "error", "message": str(e)})
+
+    threading.Thread(target=download_thread, daemon=True).start()
+
+    async def status_stream():
+        yield f"data: {json.dumps({'status': 'checking', 'message': 'Verifying model on Hugging Face...'})}\n\n"
+        
+        last_progress = -1
+        while True:
+            try:
+                msg = result_q.get_nowait()
+                yield f"data: {json.dumps(msg)}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+            except queue.Empty:
+                pass
+
+            # Report download progress by counting blobs
+            try:
+                if os.path.isdir(blobs_dir):
+                    all_blobs   = [f for f in os.listdir(blobs_dir) if not f.endswith('.lock')]
+                    if all_blobs:
+                        incomplete  = [f for f in all_blobs if f.endswith('.incomplete')]
+                        complete    = len(all_blobs) - len(incomplete)
+                        total       = len(all_blobs)
+                        
+                        percent = int((complete / total) * 100) if total > 0 else 0
+                        if percent != last_progress:
+                            last_progress = percent
+                            progress_msg = f"Downloading... ({complete}/{total} files)"
+                            yield f"data: {json.dumps({'status': 'downloading', 'message': progress_msg, 'percent': percent, 'complete': complete, 'total': total})}\n\n"
+            except Exception:
+                pass
+
+            await asyncio.sleep(0.8)
+
+    return StreamingResponse(status_stream(), media_type="text/event-stream")
 
 @app.post("/api/models/active")
 async def set_active_model(model_data: ModelAdd):

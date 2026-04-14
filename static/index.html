@@ -36,12 +36,6 @@
                         <!-- Options will be injected here -->
                     </select>
                 </div>
-                <div class="add-model">
-                    <input type="text" id="new-model-input" placeholder="mlx-community/...">
-                    <button id="add-model-btn" title="Add Model">
-                        <i data-lucide="plus-circle"></i>
-                    </button>
-                </div>
                 <button class="settings-open-btn" id="settings-open-btn" title="Settings">
                     <i data-lucide="settings"></i>
                     <span>Settings</span>
@@ -221,8 +215,26 @@
             <!-- Model Library -->
             <div class="settings-section">
                 <h3 class="settings-section-title">🤖 Model Library</h3>
-                <p class="settings-section-desc">Deleting a model removes it from the list <strong>and</strong> from
-                    disk (<code>~/.cache/huggingface/hub/</code>). The active model cannot be deleted.</p>
+                <p class="settings-section-desc">Add a new model from HF (must be <code>mlx-community/</code>). Deleting a model removes it from disk (<code>~/.cache/huggingface/hub/</code>). The active model cannot be deleted.</p>
+                
+                <div class="settings-add-model">
+                    <input type="text" id="new-model-input" placeholder="mlx-community/Llama-3-8B-Instruct-4bit">
+                    <button id="add-model-btn" title="Add Model">
+                        <i data-lucide="plus"></i>
+                        <span>Add</span>
+                    </button>
+                </div>
+
+                <div id="model-download-progress" class="model-download-progress" style="display: none;">
+                    <div class="progress-info">
+                        <span id="progress-status">Downloading...</span>
+                        <span id="progress-percent">0%</span>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div id="progress-bar-fill" class="progress-bar-fill"></div>
+                    </div>
+                </div>
+
                 <div id="settings-models-list" class="settings-models-list">
                     <!-- injected by JS -->
                 </div>

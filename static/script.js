@@ -570,7 +570,7 @@ async function sendMessage(text = null) {
     let fullContent = "";
 
     // Lock UI immediately for ALL generations
-    document.querySelectorAll('#chat-history, .new-chat-btn, #add-model-btn').forEach(item => {
+    document.querySelectorAll('#chat-history, .new-chat-btn, #settings-open-btn').forEach(item => {
         item.style.pointerEvents = 'none';
         item.style.opacity = '0.5';
     });
@@ -727,7 +727,7 @@ async function sendMessage(text = null) {
         }
 
         // Release UI locks
-        document.querySelectorAll('#chat-history, .new-chat-btn, #add-model-btn').forEach(item => {
+        document.querySelectorAll('#chat-history, .new-chat-btn, #settings-open-btn').forEach(item => {
             item.style.pointerEvents = 'auto';
             item.style.opacity = '1';
         });
@@ -898,9 +898,19 @@ async function addNewModel() {
         return;
     }
 
-    const originalBadgeText = modelBadge.textContent;
-    modelBadge.textContent = "Downloading...";
-    modelBadge.style.opacity = "0.5";
+    const addBtn = document.getElementById('add-model-btn');
+    const progressContainer = document.getElementById('model-download-progress');
+    const statusText = document.getElementById('progress-status');
+    const percentText = document.getElementById('progress-percent');
+    const barFill = document.getElementById('progress-bar-fill');
+
+    // Reset and show progress UI
+    addBtn.disabled = true;
+    newModelInput.disabled = true;
+    progressContainer.style.display = 'block';
+    barFill.style.width = '0%';
+    statusText.textContent = 'Initializing...';
+    percentText.textContent = '0%';
 
     try {
         const response = await fetch(`${API_URL}/api/models`, {
@@ -909,18 +919,65 @@ async function addNewModel() {
             body: JSON.stringify({ name })
         });
 
-        if (response.ok) {
-            newModelInput.value = '';
-            loadModels();
-        } else {
-            const data = await response.json();
-            alert(data.detail || "Error adding model");
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.detail || 'Error starting download');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        outer: while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const lines = decoder.decode(value).split('\n');
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                const raw = line.slice(6).trim();
+                if (raw === '[DONE]') break outer;
+
+                try {
+                    const data = JSON.parse(raw);
+                    console.log("Model progress:", data);
+
+                    if (data.status === 'checking') {
+                        statusText.textContent = data.message;
+                    } else if (data.status === 'downloading') {
+                        statusText.textContent = data.message;
+                        const pct = data.percent || 0;
+                        percentText.textContent = `${pct}%`;
+                        barFill.style.width = `${pct}%`;
+                    } else if (data.status === 'ready') {
+                        statusText.textContent = 'Success!';
+                        percentText.textContent = '100%';
+                        barFill.style.width = '100%';
+                        newModelInput.value = '';
+                        
+                        // Wait a bit to show 100% then refresh
+                        setTimeout(async () => {
+                            progressContainer.style.display = 'none';
+                            addBtn.disabled = false;
+                            newModelInput.disabled = false;
+                            await loadModels();
+                            await loadSettingsModels();
+                        }, 1500);
+                    } else if (data.status === 'error') {
+                        throw new Error(data.message || 'Unknown error');
+                    }
+                } catch (e) {
+                    if (e.message !== 'Unexpected end of JSON input') {
+                        throw e;
+                    }
+                }
+            }
         }
     } catch (error) {
         console.error('Error adding model:', error);
-    } finally {
-        modelBadge.textContent = originalBadgeText;
-        modelBadge.style.opacity = "1";
+        alert(`Failed to add model: ${error.message}`);
+        progressContainer.style.display = 'none';
+        addBtn.disabled = false;
+        newModelInput.disabled = false;
     }
 }
 
@@ -928,6 +985,12 @@ async function switchModel(modelName) {
     sendBtn.disabled = true;
     chatInput.disabled = true;
     const originalBadgeText = modelBadge.textContent;
+
+    // Lock UI
+    document.querySelectorAll('#chat-history, .new-chat-btn, #settings-open-btn').forEach(item => {
+        item.style.pointerEvents = 'none';
+        item.style.opacity = '0.5';
+    });
 
     // Animate the badge to show activity
     const setBadge = (text, pulse = true) => {
@@ -994,6 +1057,12 @@ async function switchModel(modelName) {
         sendBtn.disabled = false;
         chatInput.disabled = false;
         modelBadge.style.fontStyle = 'normal';
+
+        // Unlock UI
+        document.querySelectorAll('#chat-history, .new-chat-btn, #settings-open-btn').forEach(item => {
+            item.style.pointerEvents = 'auto';
+            item.style.opacity = '1';
+        });
     }
 }
 

@@ -106,35 +106,98 @@ html {
     border-color: var(--accent-color);
 }
 
-.add-model {
+/* Settings Add Model */
+.settings-add-model {
     display: flex;
-    gap: 8px;
+    gap: 10px;
+    margin-bottom: 20px;
 }
 
-.add-model input {
+.settings-add-model input {
     flex: 1;
-    background-color: var(--input-bg);
-    color: var(--text-color);
+    background: rgba(255, 255, 255, 0.05);
     border: 1px solid var(--border-color);
-    padding: 8px;
-    border-radius: 6px;
-    font-size: 13px;
+    color: var(--text-color);
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 14px;
     outline: none;
+    transition: all 0.2s;
 }
 
-.add-model button {
-    background-color: transparent;
-    color: var(--accent-color);
+.settings-add-model input:focus {
+    border-color: var(--accent-color);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.settings-add-model button {
+    background: var(--accent-color);
+    color: #000;
     border: none;
+    padding: 0 18px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 14px;
     cursor: pointer;
     display: flex;
     align-items: center;
-    justify-content: center;
-    transition: transform 0.2s;
+    gap: 8px;
+    transition: all 0.2s;
 }
 
-.add-model button:hover {
-    transform: scale(1.1);
+.settings-add-model button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(85, 170, 255, 0.3);
+}
+
+.settings-add-model button:active {
+    transform: translateY(0);
+}
+
+.settings-add-model button i {
+    width: 16px;
+    height: 16px;
+}
+
+/* Download Progress */
+.model-download-progress {
+    background: rgba(85, 170, 255, 0.05);
+    border: 1px solid rgba(85, 170, 255, 0.2);
+    border-radius: 12px;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+
+.progress-info {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+#progress-status {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent-color);
+}
+
+#progress-percent {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.progress-bar-container {
+    height: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background: var(--accent-color);
+    width: 0%;
+    transition: width 0.3s ease;
+    box-shadow: 0 0 8px rgba(85, 170, 255, 0.5);
 }
 
 .history-item {
