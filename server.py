@@ -1,4 +1,8 @@
 import os
+# MUST be before importing anything from HF to ensure libraries like transformers respect it
+os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
+
 import uuid
 import sqlite3
 import subprocess
@@ -35,7 +39,14 @@ MODEL_NAME = None
 model = None
 tokenizer = None
 processor = None # For VLM models
+vlm_config = None # Cached VLM config
 IS_VLM = False   # Flag if model is vision-based
+
+def is_model_cached(model_name: str) -> bool:
+    safe = model_name.replace("/", "--")
+    cache_dir = os.path.join(os.path.expanduser("~/.cache/huggingface/hub"), f"models--{safe}")
+    snapshots_dir = os.path.join(cache_dir, "snapshots")
+    return os.path.isdir(snapshots_dir)
 DB_PATH = "database/chats.db"
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB hard limit to prevent OOM on large uploads
 
@@ -118,7 +129,7 @@ def get_db_connection():
 # Model loading logic
 def load_active_model(override_name: str = None) -> tuple[bool, str]:
     """Loads the specified or default model. Returns (success, actual_model_name)."""
-    global MODEL_NAME, model, tokenizer, processor, IS_VLM
+    global MODEL_NAME, model, tokenizer, processor, vlm_config, IS_VLM
     
     if override_name:
         MODEL_NAME = override_name
@@ -137,14 +148,29 @@ def load_active_model(override_name: str = None) -> tuple[bool, str]:
     model = None
     tokenizer = None
     processor = None
+    vlm_config = None
     gc.collect()
     mx.clear_cache()
     
+    # Determine if we should force local-only
+    use_local = is_model_cached(MODEL_NAME)
+    if not use_local:
+        # If not cached, we MUST allow networking to let it download if it fails over
+        os.environ["HF_HUB_OFFLINE"] = "0"
+        os.environ["TRANSFORMERS_OFFLINE"] = "0"
+        print(f"Enabling networking for {MODEL_NAME} (not cached)")
+    else:
+        # Ensure offline mode is enforced
+        os.environ["HF_HUB_OFFLINE"] = "1"
+        os.environ["TRANSFORMERS_OFFLINE"] = "1"
+
     try:
         # Step 1: Attempt to load as a Vision model (VLM)
         print(f"Checking if {MODEL_NAME} is a Vision model (mlx_vlm)...")
+        # mlx_vlm.load doesn't always handle local_files_only correctly, use env-var approach
         model, processor = mlx_vlm.load(MODEL_NAME)
-        tokenizer        = processor.tokenizer # align for shared code
+        tokenizer        = processor.tokenizer
+        vlm_config       = load_vlm_config(MODEL_NAME)
         IS_VLM = True
         print(f"Model {MODEL_NAME} loaded successfully as VLM.")
         return True, MODEL_NAME
@@ -154,6 +180,7 @@ def load_active_model(override_name: str = None) -> tuple[bool, str]:
         try:
             model, tokenizer = load(MODEL_NAME)
             processor = None
+            vlm_config = None
             IS_VLM = False
             print(f"Model {MODEL_NAME} loaded successfully as standard LLM.")
             return True, MODEL_NAME
@@ -860,7 +887,7 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                 # VLM prompt formatting needs the MESSAGES list, not the pre-templated string
                 formatted_prompt = apply_vlm_template(
                     processor,
-                    load_vlm_config(MODEL_NAME),
+                    vlm_config, # Use the cached config
                     messages, # Use the original messages list
                     num_images=len(image_paths)
                 )
@@ -1016,6 +1043,12 @@ async def add_model(model_data: ModelAdd):
 
     def download_thread():
         try:
+            # Temporarily enable networking for download
+            import huggingface_hub.constants
+            os.environ["HF_HUB_OFFLINE"] = "0"
+            os.environ["TRANSFORMERS_OFFLINE"] = "0"
+            huggingface_hub.constants.HF_HUB_OFFLINE = False
+            
             # 1. Verify model existence on Hugging Face
             api = HfApi()
             api.model_info(repo_id=model_data.name)
@@ -1023,7 +1056,7 @@ async def add_model(model_data: ModelAdd):
             # 2. Trigger download (if not cached)
             if not is_cached:
                 from huggingface_hub import snapshot_download
-                snapshot_download(repo_id=model_data.name)
+                snapshot_download(repo_id=model_data.name, local_files_only=False)
             
             # 3. Add to DB
             with closing(get_db_connection()) as conn:
@@ -1031,11 +1064,22 @@ async def add_model(model_data: ModelAdd):
                     conn.execute("INSERT INTO models (name) VALUES (?)", (model_data.name,))
                     conn.commit()
                 except sqlite3.IntegrityError:
-                    # Model might have been added while downloading or already existed
                     pass
             
+            # Restore offline mode for safety
+            os.environ["HF_HUB_OFFLINE"] = "1"
+            os.environ["TRANSFORMERS_OFFLINE"] = "1"
+            huggingface_hub.constants.HF_HUB_OFFLINE = True
+
             result_q.put({"status": "ready", "model": model_data.name.split("/")[-1], "full": model_data.name})
         except Exception as e:
+            # Restore offline mode even on error
+            os.environ["HF_HUB_OFFLINE"] = "1"
+            os.environ["TRANSFORMERS_OFFLINE"] = "1"
+            try:
+                import huggingface_hub.constants
+                huggingface_hub.constants.HF_HUB_OFFLINE = True
+            except: pass
             result_q.put({"status": "error", "message": str(e)})
 
     threading.Thread(target=download_thread, daemon=True).start()
