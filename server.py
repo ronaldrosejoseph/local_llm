@@ -382,8 +382,15 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
             ".md",
         }
         ext = os.path.splitext(safe_name.lower())[1]
-        chunk_size = 400 if ext in CODE_EXTENSIONS else 800
-        chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size) if len(text[i:i+chunk_size].strip()) > 20]
+        is_code = ext in CODE_EXTENSIONS
+        
+        if is_code:
+            # For code files, we treat the entire file as a single chunk (up to 100k chars)
+            chunks = [text[:100000]]
+        else:
+            # Standard chunking for generic text and PDFs
+            chunk_size = 800
+            chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size) if len(text[i:i+chunk_size].strip()) > 20]
         
         if not chunks:
              return {"status": "ok", "chunks": 0}
@@ -394,14 +401,26 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
             document_store[chat_id] = []
 
         if emb_model:
-            embeddings = emb_model.encode(chunks)
+            # For code, only embed the start of the file for indexing speed/relevance
+            embs_input = [c[:500] if is_code else c for c in chunks]
+            embeddings = emb_model.encode(embs_input)
             for chunk, emb in zip(chunks, embeddings):
-                document_store[chat_id].append({"type": "text", "text": chunk, "emb": emb})
+                document_store[chat_id].append({
+                    "type": "code" if is_code else "text", 
+                    "text": chunk, 
+                    "emb": emb,
+                    "filename": safe_name if is_code else None
+                })
         else:
             # Fallback: store text chunks without embeddings if embedder is dead
             print("Warning: Saving document chunks without embeddings (RAG offline).")
             for chunk in chunks:
-                document_store[chat_id].append({"type": "text", "text": chunk, "emb": None})
+                document_store[chat_id].append({
+                    "type": "code" if is_code else "text", 
+                    "text": chunk, 
+                    "emb": None,
+                    "filename": safe_name if is_code else None
+                })
 
         # Record attachment in DB so it shows up in history when switching chats
         with closing(get_db_connection()) as conn:
@@ -799,7 +818,7 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                 print(f"Vision background extraction error: {e}")
         
         # Limit window for UI and Model
-        rag_meta = {"offset": offset, "total": total_pages, "limit": limit}
+        rag_meta = {"offset": offset, "total": total_pages, "limit": limit, "is_vision": True}
     
     for i, h in enumerate(history):
         content = h["content"]
@@ -813,40 +832,48 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                     # Only proceed with text RAG if embeddings are available and we have text chunks
                     has_text_docs = any(d.get("emb") is not None for d in document_store[chat_id])
                     
-                    if emb_model and has_text_docs:
+                    # Separate documents into code (full file) and text (chunked RAG)
+                    code_docs = [d for d in document_store[chat_id] if d.get("type") == "code"]
+                    text_docs = [d for d in document_store[chat_id] if d.get("type") == "text" and d.get("emb") is not None]
+                    
+                    # 1. Add Code Context (All code documents are included in full)
+                    if code_docs:
+                        doc_context += "### Full Code Context ###\n"
+                        for d in code_docs:
+                            fname = d.get('filename', 'Code File')
+                            doc_context += f"File: {fname}\n```\n{d['text']}\n```\n\n"
+
+                    # 2. Add Text Context (Semantic RAG search for large documents/PDFs)
+                    if emb_model and text_docs:
                         query = content.replace("/web", "").strip()
                         query_emb = emb_model.encode([query])[0]
                         
-                        docs = [d for d in document_store[chat_id] if d.get("emb") is not None]
-                        if docs:
-                            doc_embs = [d['emb'] for d in docs]
-                            
-                            q_norm = query_emb / np.linalg.norm(query_emb)
-                            d_norms = doc_embs / np.linalg.norm(doc_embs, axis=1)[:, np.newaxis]
-                            similarities = np.dot(d_norms, q_norm)
-                            
-                            # Sorting all available chunks by descending similarity
-                            all_indices = np.argsort(similarities)[::-1]
-                            total_chunks = len(all_indices)
-                            
-                            # Windowing Logic
-                            offset = rag_offsets.get(chat_id, 0)
-                            # Ensure we don't exceed the total length (reset if needed)
-                            if offset >= total_chunks: offset = 0 
-                            
-                            limit = load_config().get("pdf_text_pages_per_batch", 50)
-                            top_indices = all_indices[offset : offset + limit]
-                            rag_meta = {"offset": offset, "total": total_chunks, "limit": limit}
-                            
-                            doc_context = f"### Attached Document Context (Chunks {offset+1} to {min(offset+limit, total_chunks)} of {total_chunks}) ###\n"
-                            if offset > 0:
-                                doc_context += f"System note: You are viewing the NEXT set of relevant context. Previous {offset} chunks have been hidden to save memory.\n\n"
-                            
-                            for idx in top_indices:
-                                doc_context += f"- {docs[idx]['text']}\n\n"
-                            
-                            if total_chunks > (offset + limit):
-                                doc_context += f"\nNote to model: There are {total_chunks - (offset + limit)} more chunks available. If the user asks for 'more' or 'next', inform them that you can advance the context window.\n"
+                        doc_embs = [d['emb'] for d in text_docs]
+                        q_norm = query_emb / np.linalg.norm(query_emb)
+                        d_norms = doc_embs / np.linalg.norm(doc_embs, axis=1)[:, np.newaxis]
+                        similarities = np.dot(d_norms, q_norm)
+                        
+                        # Sorting all available text chunks by descending similarity
+                        all_indices = np.argsort(similarities)[::-1]
+                        total_chunks = len(all_indices)
+                        
+                        # Windowing Logic for Text RAG
+                        offset = rag_offsets.get(chat_id, 0)
+                        if offset >= total_chunks: offset = 0 
+                        
+                        limit = load_config().get("pdf_text_pages_per_batch", 50)
+                        top_indices = all_indices[offset : offset + limit]
+                        rag_meta = {"offset": offset, "total": total_chunks, "limit": limit, "is_vision": False}
+                        
+                        doc_context += f"### Relevant Document Snippets (Chunks {offset+1} to {min(offset+limit, total_chunks)} of {total_chunks}) ###\n"
+                        if offset > 0:
+                            doc_context += f"System note: Showing NEXT relevant context snippets.\n\n"
+                        
+                        for idx in top_indices:
+                            doc_context += f"- {text_docs[idx]['text']}\n\n"
+                        
+                        if total_chunks > (offset + limit):
+                            doc_context += f"\nNote: {total_chunks - (offset + limit)} more sections available. Ask 'next' for more.\n"
                     else:
                         print("RAG: Text embedding retrieval skipped (likely vision PDF or missing embedder).")
                 except Exception as e:

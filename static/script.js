@@ -577,6 +577,9 @@ async function sendMessage(text = null) {
     modelSelect.disabled = true;
 
     try {
+        const ragStatusEl = document.getElementById('rag-status');
+        if (ragStatusEl) ragStatusEl.style.display = 'none';
+
         const response = await fetch(`${API_URL}/api/chat${requestChatId ? `?chat_id=${requestChatId}` : ''}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -606,9 +609,13 @@ async function sendMessage(text = null) {
                             const rs = data.rag_status;
                             const el = document.getElementById('rag-status');
                             if (el) {
-                                const end = Math.min(rs.offset + rs.limit, rs.total);
-                                el.textContent = `Context: ${rs.offset + 1}-${end} / ${rs.total}`;
-                                el.style.display = 'inline-block';
+                                if (rs.total > rs.limit) {
+                                    const end = Math.min(rs.offset + rs.limit, rs.total);
+                                    el.textContent = `Context: ${rs.offset + 1}-${end} / ${rs.total}`;
+                                    el.style.display = 'inline-block';
+                                } else {
+                                    el.style.display = 'none';
+                                }
                             }
                         }
 
