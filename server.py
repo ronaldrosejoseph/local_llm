@@ -512,7 +512,7 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                     model = None
                     tokenizer = None
                     import gc; gc.collect()
-                    import mlx.core as mx; mx.metal.clear_cache()
+                    import mlx.core as mx; mx.clear_cache()
                     
                     if not os.path.exists("static/images"):
                         os.makedirs("static/images")
@@ -551,7 +551,7 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                     
                     del flux
                     import gc; gc.collect()
-                    import mlx.core as mx; mx.metal.clear_cache()
+                    import mlx.core as mx; mx.clear_cache()
                     
                     # Signal badge: reloading text model
                     q.put({"model_badge": "Reloading LLM...", "model_badge_pulse": True})
@@ -651,7 +651,7 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                     model = None
                     tokenizer = None
                     import gc; gc.collect()
-                    import mlx.core as mx; mx.metal.clear_cache()
+                    import mlx.core as mx; mx.clear_cache()
                     
                     if not os.path.exists("static/images"):
                         os.makedirs("static/images")
@@ -692,7 +692,7 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                     
                     del flux
                     import gc; gc.collect()
-                    import mlx.core as mx; mx.metal.clear_cache()
+                    import mlx.core as mx; mx.clear_cache()
                     
                     # Signal badge: reloading text model
                     q.put({"model_badge": "Reloading LLM...", "model_badge_pulse": True})
