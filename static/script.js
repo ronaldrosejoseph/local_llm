@@ -464,7 +464,7 @@ async function startNewChat() {
     // Clear pending structural attachments instantly on fresh slate
     attachmentContainer.style.display = 'none';
     fileUpload.value = '';
-    
+
     // Reset RAG badge
     const ragStatus = document.getElementById('rag-status');
     if (ragStatus) ragStatus.style.display = 'none';
@@ -604,7 +604,7 @@ async function sendMessage(text = null) {
 
                     try {
                         const data = JSON.parse(dataStr);
-                        
+
                         if (data.rag_status) {
                             const rs = data.rag_status;
                             const el = document.getElementById('rag-status');
@@ -673,6 +673,7 @@ async function sendMessage(text = null) {
                                     actionsDiv.innerHTML = `
                                         <button onclick="speakResponse(this.parentElement.previousElementSibling.textContent)" title="Read out loud" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="volume-2" style="width: 14px; height: 14px;"></i></button>
                                         <button onclick="stopSpeaking()" title="Stop speaking" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="square" style="width: 14px; height: 14px;"></i></button>
+                                        <button onclick="copyToClipboard(this.parentElement.previousElementSibling.textContent, this)" title="Copy to clipboard" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="copy" style="width: 14px; height: 14px;"></i></button>
                                     `;
                                     assistantMessageDiv.appendChild(actionsDiv);
                                     messagesContainer.appendChild(assistantMessageDiv);
@@ -770,6 +771,7 @@ function appendMessage(role, content) {
             ${role === 'assistant' ? `
                 <button onclick="speakResponse(this.parentElement.previousElementSibling.textContent)" title="Read out loud" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="volume-2" style="width: 14px; height: 14px;"></i></button>
                 <button onclick="stopSpeaking()" title="Stop speaking" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="square" style="width: 14px; height: 14px;"></i></button>
+                <button onclick="copyToClipboard(this.parentElement.previousElementSibling.textContent, this)" title="Copy to clipboard" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="copy" style="width: 14px; height: 14px;"></i></button>
             ` : ''}
         </div>
     `;
@@ -960,7 +962,7 @@ async function addNewModel() {
                         percentText.textContent = '100%';
                         barFill.style.width = '100%';
                         newModelInput.value = '';
-                        
+
                         // Wait a bit to show 100% then refresh
                         setTimeout(async () => {
                             progressContainer.style.display = 'none';
@@ -1111,5 +1113,32 @@ async function copyCode(elementId) {
         }, 2000);
     } catch (err) {
         console.error('Failed to copy code:', err);
+    }
+}
+
+async function copyToClipboard(text, btn) {
+    try {
+        await navigator.clipboard.writeText(text);
+
+        // Visual feedback
+        let icon = btn.querySelector('i, svg');
+        if (icon) {
+            const originalIconName = icon.getAttribute('data-lucide') || 'copy';
+            const newIcon = document.createElement('i');
+            newIcon.setAttribute('data-lucide', 'check');
+            newIcon.style.cssText = 'width: 14px; height: 14px; color: #50fa7b;';
+            icon.replaceWith(newIcon);
+            lucide.createIcons({ elements: [newIcon] });
+
+            setTimeout(() => {
+                const backIcon = document.createElement('i');
+                backIcon.setAttribute('data-lucide', originalIconName);
+                backIcon.style.cssText = 'width: 14px; height: 14px;';
+                newIcon.replaceWith(backIcon);
+                lucide.createIcons({ elements: [backIcon] });
+            }, 2000);
+        }
+    } catch (err) {
+        console.error('Failed to copy text:', err);
     }
 }
