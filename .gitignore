@@ -37,6 +37,17 @@ database/*.db
 *.swp
 *.swo
 
+# Runtime config (generated/modified by server)
+config.json
+
 # Media & Generated Images
 static/images/*
 static/uploads/*
+
+# AI tooling
+.gemini/
+
+# Distribution / packaging
+*.egg-info/
+dist/
+build/
