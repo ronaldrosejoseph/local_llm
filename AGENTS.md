@@ -107,7 +107,7 @@
 | `GET` | `/api/chats/{chat_id}/messages` | Get messages for a chat |
 | `POST` | `/api/chat?chat_id=` | Send message, returns SSE stream of tokens |
 | `POST` | `/api/chats/{chat_id}/generate-title`| Auto-generates a 3-5 word title using the LLM for a new conversation |
-| `DELETE` | `/api/chats/{chat_id}` | Delete a chat |
+| `DELETE` | `/api/chats/{chat_id}` | Delete a chat (including all messages, docs, and physical assets) |
 | `POST` | `/api/upload-document` | Upload file for RAG (multipart form) |
 | `GET` | `/api/models` | List models in library |
 | `POST` | `/api/models` | Add model (verify + download), returns SSE progress |
@@ -154,6 +154,12 @@
 - Both `/imagine` and `/edit` use the shared `run_flux_pipeline()` service.
 - Progress is reported via SSE with ASCII progress bars.
 - Generated images saved to `static/images/` and served as markdown `![](...)`.
+
+### Asset Management & Cleanup
+- **SQLite Foreign Keys:** Enabled globally via `PRAGMA foreign_keys = ON`.
+- **Chat Deletion:** Deleting a chat automatically triggers a filesystem cleanup in `static/uploads/` and `static/images/`.
+- **Documents:** PDF sources, extracted page images, and uploaded files referenced in the `documents` table are deleted.
+- **Images:** Generated images referenced in `messages` are parsed and deleted from `static/images/`.
 
 ---
 

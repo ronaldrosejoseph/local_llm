@@ -2,6 +2,7 @@
 Chat routes — CRUD for chats/messages and the main streaming generation endpoint.
 """
 
+import os
 import uuid
 import json
 import re
@@ -114,11 +115,50 @@ def generate_title(chat_id: str):
 
 @router.delete("/api/chats/{chat_id}")
 def delete_chat(chat_id: str):
+    # 1. Gather all file paths linked to this chat before deleting records (due to CASCADE)
+    files_to_delete = []
+    
+    # Check for the chat-specific PDF (scanned PDF processing)
+    pdf_path = f"static/uploads/{chat_id}.pdf"
+    if os.path.exists(pdf_path):
+        files_to_delete.append(pdf_path)
+
+    with closing(get_db_connection()) as conn:
+        # Get paths from documents table (RAG attachments/Vision images)
+        doc_rows = conn.execute("SELECT metadata FROM documents WHERE chat_id = ?", (chat_id,)).fetchall()
+        for row in doc_rows:
+            if row["metadata"]:
+                try:
+                    meta = json.loads(row["metadata"])
+                    if "path" in meta:
+                        files_to_delete.append(meta["path"])
+                except:
+                    pass
+        
+        # Get paths from messages table (Generated images via /imagine or /edit)
+        msg_rows = conn.execute("SELECT content FROM messages WHERE chat_id = ?", (chat_id,)).fetchall()
+        for row in msg_rows:
+            content = row["content"]
+            # Look for markdown image patterns: ![/images/filename.png] or (/images/filename.png)
+            matches = re.findall(r'\(/(images|uploads)/([^)]+)\)', content)
+            for folder, filename in matches:
+                files_to_delete.append(os.path.join("static", folder, filename))
+
+    # 2. Delete the chat record (Cascades to documents and messages tables)
     with closing(get_db_connection()) as conn:
         conn.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
         conn.commit()
 
-    # Clean up in-memory RAG state
+    # 3. Clean up the physical files
+    for path in set(files_to_delete):
+        if os.path.exists(path):
+            try:
+                os.remove(path)
+                print(f"Deleted chat asset: {path}")
+            except Exception as e:
+                print(f"Failed to delete chat asset {path}: {e}")
+
+    # 4. Clean up in-memory RAG state
     if chat_id in state.document_store:
         del state.document_store[chat_id]
     if chat_id in state.rag_offsets:
