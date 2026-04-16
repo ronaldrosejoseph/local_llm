@@ -212,6 +212,19 @@ export async function sendMessage(text = null) {
             item.style.opacity = '1';
         });
         elements.modelSelect.disabled = false;
+
+        // Auto-generate title if it's a new conversation
+        if (elements.currentChatTitle.textContent === "New Conversation" && state.currentChatId === requestChatId && fullContent.trim().length > 0) {
+            fetch(`${API_URL}/api/chats/${requestChatId}/generate-title`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.title) {
+                        elements.currentChatTitle.textContent = data.title;
+                        loadChatHistory();
+                    }
+                })
+                .catch(err => console.error("Could not auto-generate title:", err));
+        }
     }
 }
 

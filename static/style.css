@@ -64,6 +64,43 @@ html {
     background-color: #2c2c2c;
 }
 
+.sidebar-search {
+    display: flex;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 0 12px;
+    margin-bottom: 20px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    height: 48px; /* Match new chat button roughly */
+}
+
+.sidebar-search:focus-within {
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px rgba(85, 170, 255, 0.1);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-search i {
+    width: 14px;
+    height: 14px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.sidebar-search input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    padding: 0 0 0 10px;
+    color: var(--text-color);
+    font-size: 14px;
+    font-family: var(--font-family);
+    outline: none;
+    width: 100%;
+}
+
 .chat-history {
     flex: 1;
     overflow-y: auto;

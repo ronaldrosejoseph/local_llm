@@ -30,10 +30,14 @@ router = APIRouter()
 
 
 @router.get("/api/chats")
-def get_chats():
+def get_chats(q: Optional[str] = None):
     with closing(get_db_connection()) as conn:
-        chats = conn.execute("SELECT * FROM chats ORDER BY created_at DESC").fetchall()
-    return [{"id": c["id"], "title": c["title"], "created_at": c["created_at"]} for c in chats]
+        if q and q.strip():
+            search_term = f"%{q.strip()}%"
+            chats = conn.execute("SELECT * FROM chats WHERE title LIKE ? ORDER BY updated_at DESC", (search_term,)).fetchall()
+        else:
+            chats = conn.execute("SELECT * FROM chats ORDER BY updated_at DESC").fetchall()
+    return [{"id": c["id"], "title": c["title"], "updated_at": c["updated_at"]} for c in chats]
 
 
 @router.get("/api/chats/{chat_id}/messages")
@@ -43,6 +47,70 @@ def get_messages(chat_id: str):
                                 (chat_id,)).fetchall()
     return [{"role": m["role"], "content": m["content"]} for m in messages]
 
+
+@router.post("/api/chats/{chat_id}/generate-title")
+def generate_title(chat_id: str):
+    """
+    Summarize the first message of a chat into a concise title and update the DB.
+    """
+    if not hasattr(state, "model") or state.model is None:
+        return {"error": "Model not loaded"}
+
+    with closing(get_db_connection()) as conn:
+        msgs = conn.execute("SELECT content FROM messages WHERE chat_id = ? AND role = 'user' ORDER BY timestamp ASC LIMIT 1", (chat_id,)).fetchall()
+        if not msgs:
+            return {"error": "No user messages found"}
+        first_message = msgs[0]["content"]
+
+    # We must acquire lock securely since we invoke the standard LLM APIs
+    if not state.generation_lock.acquire(blocking=True, timeout=5.0):
+        return {"error": "Model busy"}
+        
+    try:
+        prompt_txt = f"Summarize this prompt strictly into a title with exactly 2 to 5 words. Do not use quotes or punctuation at the end:\n\n{first_message}"
+        messages = [{"role": "user", "content": prompt_txt}]
+        
+        if state.IS_VLM:
+            from mlx_vlm import generate as generate_vlm
+            from mlx_vlm.prompt_utils import apply_chat_template as apply_vlm_template
+            
+            prompt = apply_vlm_template(
+                state.processor,
+                state.vlm_config,
+                messages,
+                num_images=0
+            )
+            result = generate_vlm(
+                state.model,
+                state.processor,
+                prompt=prompt,
+                max_tokens=12,
+                verbose=False
+            )
+        else:
+            from mlx_lm import generate
+            prompt = state.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            result = generate(
+                state.model, 
+                state.tokenizer, 
+                prompt=prompt, 
+                max_tokens=12, 
+                verbose=False
+            )
+            
+        text_result = result if isinstance(result, str) else getattr(result, "text", str(result))
+        title = text_result.strip().strip('"').strip("'")
+        
+        with closing(get_db_connection()) as conn:
+            conn.execute("UPDATE chats SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (title, chat_id))
+            conn.commit()
+            
+        return {"title": title}
+    except Exception as e:
+        print(f"Failed to generate title: {e}")
+        return {"error": str(e)}
+    finally:
+        state.generation_lock.release()
 
 @router.delete("/api/chats/{chat_id}")
 def delete_chat(chat_id: str):

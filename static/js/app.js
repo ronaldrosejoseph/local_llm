@@ -43,6 +43,14 @@ elements.newChatBtn.addEventListener('click', startNewChat);
 elements.menuToggle.addEventListener('click', toggleSidebar);
 elements.sidebarOverlay.addEventListener('click', closeSidebar);
 
+let searchTimeout;
+document.getElementById('chat-search-input').addEventListener('input', (e) => {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        loadChatHistory(e.target.value.trim());
+    }, 300);
+});
+
 // Chat input
 elements.sendBtn.addEventListener('click', () => sendMessage());
 elements.chatInput.addEventListener('keydown', (e) => {

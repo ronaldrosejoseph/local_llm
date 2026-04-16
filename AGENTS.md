@@ -103,9 +103,10 @@
 
 | Method | Route | Purpose |
 |--------|-------|---------|
-| `GET` | `/api/chats` | List all chats (id, title, created_at) |
+| `GET` | `/api/chats?q=` | List all chats (id, title, updated_at). Optional `q` parameter searches by title. |
 | `GET` | `/api/chats/{chat_id}/messages` | Get messages for a chat |
 | `POST` | `/api/chat?chat_id=` | Send message, returns SSE stream of tokens |
+| `POST` | `/api/chats/{chat_id}/generate-title`| Auto-generates a 3-5 word title using the LLM for a new conversation |
 | `DELETE` | `/api/chats/{chat_id}` | Delete a chat |
 | `POST` | `/api/upload-document` | Upload file for RAG (multipart form) |
 | `GET` | `/api/models` | List models in library |
@@ -236,7 +237,6 @@ The frontend reads SSE streams token-by-token. Key data fields:
 ## Known Limitations & Tech Debt
 
 1. **macOS only** — TTS uses `say` command; MLX requires Apple Silicon.
-2. **Static chat titles** — Set from first message, never updated.
 
 ---
 

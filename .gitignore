@@ -30,6 +30,8 @@ Thumbs.db
 
 # Database (keep local history private)
 database/*.db
+database/*.db-wal
+database/*.db-shm
 
 # IDEs
 .vscode/

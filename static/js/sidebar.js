@@ -7,9 +7,10 @@ import { renderMarkdown, scrollToBottom } from './utils.js';
 
 // --- Chat History ---
 
-export async function loadChatHistory() {
+export async function loadChatHistory(query = '') {
     try {
-        const response = await fetch(`${API_URL}/api/chats`);
+        const url = query ? `${API_URL}/api/chats?q=${encodeURIComponent(query)}` : `${API_URL}/api/chats`;
+        const response = await fetch(url);
         if (!response.ok) throw new Error(`Server error: ${response.status}`);
         const chats = await response.json();
 
