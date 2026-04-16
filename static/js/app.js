@@ -13,6 +13,7 @@ import { loadModels, addNewModel, switchModel } from './models.js';
 import { openSettings, closeSettings, loadConfig, initConfigSliders } from './settings.js';
 import { initDocumentUpload } from './documents.js';
 import { speakResponse, stopSpeaking, toggleRecording, initSpeechRecognition } from './speech.js';
+import { loadSystemPrompt, saveSystemPrompt, toggleSystemPrompt } from './system_prompt.js';
 
 // --- Expose globals for inline onclick handlers in dynamically created HTML ---
 window.speakResponse = speakResponse;
@@ -60,6 +61,10 @@ elements.chatInput.addEventListener('input', () => {
 // Stop & Voice
 elements.stopBtn.addEventListener('click', stopGeneration);
 elements.voiceBtn.addEventListener('click', toggleRecording);
+
+// System Prompt
+document.getElementById('system-prompt-toggle').addEventListener('click', toggleSystemPrompt);
+document.getElementById('system-prompt-save').addEventListener('click', saveSystemPrompt);
 
 // Models
 elements.addModelBtn.addEventListener('click', addNewModel);

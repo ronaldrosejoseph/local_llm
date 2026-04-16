@@ -151,6 +151,8 @@ async def set_active_model(model_data: ModelAdd):
     result_q: queue.Queue = queue.Queue()
 
     def load_thread():
+        # Acquire generation lock to prevent model switch during active generation
+        state.generation_lock.acquire()
         try:
             # Update DB active flag optimistically (load_active_model will correct it on failure)
             with closing(get_db_connection()) as conn:
@@ -182,6 +184,8 @@ async def set_active_model(model_data: ModelAdd):
             except Exception:
                 pass
             result_q.put({"status": "error", "message": f"Critical error during model switch: {str(e)}"})
+        finally:
+            state.generation_lock.release()
 
     threading.Thread(target=load_thread, daemon=True).start()
 

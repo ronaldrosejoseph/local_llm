@@ -30,7 +30,11 @@ def run_flux_pipeline(prompt: str, chat_id: str, q: queue.Queue, img_name: str,
 
     Unloads the LLM, runs FLUX.1 Schnell, saves the image, reloads the LLM,
     and communicates progress back via the queue.
+
+    HARDENED: try/finally guarantees LLM reload even if FLUX crashes.
+    Concurrency: acquires generation_lock for the full lifecycle.
     """
+    state.generation_lock.acquire()
     try:
         from mflux.models.common.config import ModelConfig
         from mflux.models.flux.variants.txt2img.flux import Flux1
@@ -87,10 +91,6 @@ def run_flux_pipeline(prompt: str, chat_id: str, q: queue.Queue, img_name: str,
         gc.collect()
         mx.clear_cache()
 
-        # Signal badge: reloading text model
-        q.put({"model_badge": "Reloading LLM...", "model_badge_pulse": True})
-        load_active_model()
-
         markdown_img = f"![{prompt}](/images/{img_name})\n"
         assistant_full_reply = f"{result_message}\n\n{markdown_img}"
         with closing(get_db_connection()) as conn:
@@ -100,12 +100,18 @@ def run_flux_pipeline(prompt: str, chat_id: str, q: queue.Queue, img_name: str,
             )
             conn.commit()
 
-        # Signal badge: restore to active text model
-        q.put({"model_badge_restore": True})
         q.put({"image": img_name})
     except Exception as e:
-        q.put({"model_badge_restore": True})
         q.put({"error": str(e)})
+    finally:
+        # ALWAYS reload the LLM, even if FLUX crashed
+        try:
+            q.put({"model_badge": "Reloading LLM...", "model_badge_pulse": True})
+            load_active_model()
+        except Exception as reload_err:
+            print(f"CRITICAL: Failed to reload LLM after FLUX: {reload_err}")
+        q.put({"model_badge_restore": True})
+        state.generation_lock.release()
 
 
 async def flux_sse_generator(chat_id: str, q: queue.Queue,

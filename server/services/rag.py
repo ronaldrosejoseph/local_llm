@@ -8,11 +8,14 @@ and semantic similarity retrieval for document context injection.
 import os
 import re
 import uuid
+import json
 
 import numpy as np
 
 from server import state
 from server.config import load_config
+from server.db import get_db_connection
+from contextlib import closing
 
 # Code file extensions — these are included in full rather than chunked
 CODE_EXTENSIONS = {
@@ -187,3 +190,87 @@ def handle_vision_pdf_pagination(chat_id: str):
 
     # Limit window for UI and Model
     return {"offset": offset, "total": total_pages, "limit": limit, "is_vision": True}
+
+
+def save_documents_to_db(chat_id: str):
+    """Persist document_store entries for a chat to the documents table."""
+    if chat_id not in state.document_store:
+        return
+
+    with closing(get_db_connection()) as conn:
+        # Full replace: clear existing rows for this chat
+        conn.execute("DELETE FROM documents WHERE chat_id = ?", (chat_id,))
+
+        for doc in state.document_store[chat_id]:
+            doc_type = doc.get("type", "text")
+            content = doc.get("text", "")
+            file_name = doc.get("filename")
+
+            # Serialize embedding as BLOB
+            embedding_blob = None
+            metadata = {}
+
+            if doc.get("emb") is not None:
+                embedding_blob = doc["emb"].tobytes()
+                metadata["emb_shape"] = list(doc["emb"].shape)
+                metadata["emb_dtype"] = str(doc["emb"].dtype)
+
+            if doc.get("path"):
+                metadata["path"] = doc["path"]
+            if doc.get("total_pages"):
+                metadata["total_pages"] = doc["total_pages"]
+            if doc.get("processed_pages") is not None and doc_type == "pdf_metadata":
+                metadata["processed_pages"] = doc["processed_pages"]
+
+            conn.execute(
+                "INSERT INTO documents (chat_id, file_name, content, embedding, type, metadata) VALUES (?, ?, ?, ?, ?, ?)",
+                (chat_id, file_name, content, embedding_blob, doc_type, json.dumps(metadata))
+            )
+
+        conn.commit()
+    print(f"RAG: Persisted {len(state.document_store[chat_id])} documents for chat {chat_id}")
+
+
+def load_documents_from_db(chat_id: str) -> bool:
+    """Load documents from DB into document_store. Returns True if docs were found."""
+    with closing(get_db_connection()) as conn:
+        rows = conn.execute(
+            "SELECT file_name, content, embedding, type, metadata FROM documents WHERE chat_id = ? ORDER BY id",
+            (chat_id,)
+        ).fetchall()
+
+    if not rows:
+        return False
+
+    state.document_store[chat_id] = []
+    for row in rows:
+        doc = {"type": row["type"]}
+
+        metadata = {}
+        if row["metadata"]:
+            try:
+                metadata = json.loads(row["metadata"])
+            except Exception:
+                pass
+
+        if row["type"] in ("text", "code"):
+            doc["text"] = row["content"]
+            doc["filename"] = row["file_name"]
+            if row["embedding"] and "emb_shape" in metadata:
+                doc["emb"] = np.frombuffer(
+                    row["embedding"],
+                    dtype=metadata.get("emb_dtype", "float32")
+                ).reshape(metadata["emb_shape"]).copy()  # .copy() to make writable
+            else:
+                doc["emb"] = None
+        elif row["type"] == "image":
+            doc["path"] = metadata.get("path", "")
+        elif row["type"] == "pdf_metadata":
+            doc["path"] = metadata.get("path", "")
+            doc["total_pages"] = metadata.get("total_pages", 0)
+            doc["processed_pages"] = metadata.get("processed_pages", 0)
+
+        state.document_store[chat_id].append(doc)
+
+    print(f"RAG: Loaded {len(rows)} documents from DB for chat {chat_id}")
+    return True

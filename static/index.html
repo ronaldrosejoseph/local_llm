@@ -9,12 +9,13 @@
         href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E🤖%3C/text%3E%3C/svg%3E">
 
     <link rel="stylesheet" href="style.css">
-    <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@400;600;700&display=swap"
-        rel="stylesheet">
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+    <link href="libs/prism-tomorrow.min.css" rel="stylesheet" />
+    <link href="libs/fonts.css" rel="stylesheet">
+    <script src="libs/lucide.min.js"></script>
+    <script src="libs/marked.min.js"></script>
+    <script src="libs/purify.min.js"></script>
+    <script src="libs/prism.min.js"></script>
+    <script src="libs/prism-autoloader.min.js"></script>
 </head>
 
 <body>
@@ -58,7 +59,18 @@
                     <span id="rag-status"
                         style="display:none; margin-left: 10px; background: rgba(85,170,255,0.1); border: 1px solid rgba(85,170,255,0.3); color: var(--accent-color); padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;"></span>
                 </div>
+                <button class="system-prompt-toggle" id="system-prompt-toggle" title="System Prompt">
+                    <i data-lucide="bot"></i>
+                </button>
             </header>
+
+            <div class="system-prompt-panel" id="system-prompt-panel">
+                <div class="system-prompt-header">
+                    <span>System Prompt</span>
+                    <button class="system-prompt-save" id="system-prompt-save">Save</button>
+                </div>
+                <textarea id="system-prompt-input" placeholder="Set a system prompt for this conversation (persona, specific instructions...)"></textarea>
+            </div>
 
             <div class="messages-container" id="messages-container">
                 <div class="welcome-screen" id="welcome-screen">

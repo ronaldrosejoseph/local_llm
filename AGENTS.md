@@ -142,7 +142,7 @@
 ### RAG (Retrieval-Augmented Generation)
 - Documents are chunked on upload (800 chars for text, full file for code).
 - Embeddings computed via `sentence-transformers/all-MiniLM-L6-v2`.
-- Stored in-memory in `state.document_store` dict (keyed by chat_id). **Not persisted to DB.**
+- Persisted to SQLite `documents` table (embeddings as numpy BLOBs) and lazy-loaded into `state.document_store` memory on first chat access.
 - At query time, cosine similarity ranks chunks; top-N are injected into the prompt.
 - Pagination via `state.rag_offsets` dict — controlled by `/next` command.
 - Code files (detected by extension) are included in full rather than chunked.
@@ -167,8 +167,9 @@ tokenizer = None           # Loaded tokenizer
 processor = None           # VLM processor (None for text-only models)
 vlm_config = None          # Cached VLM config dict
 IS_VLM = False             # True if current model is a Vision model
+generation_lock = threading.Lock() # Protects model access across threads
 
-document_store = {}        # chat_id -> [{type, text, emb, ...}]  (IN-MEMORY, volatile)
+document_store = {}        # chat_id -> [{type, text, emb, ...}]  (lazy-loaded from SQLite)
 rag_offsets = {}           # chat_id -> int offset for pagination
 embedder_model = None      # SentenceTransformer instance (lazy loaded)
 say_processes = set()      # Tracked subprocess.Popen objects for TTS
@@ -180,7 +181,7 @@ say_processes = set()      # Tracked subprocess.Popen objects for TTS
 
 ```sql
 -- Chat conversations
-chats (id TEXT PK, title TEXT, created_at TIMESTAMP, updated_at TIMESTAMP)
+chats (id TEXT PK, title TEXT, created_at TIMESTAMP, updated_at TIMESTAMP, system_prompt TEXT)
 
 -- Messages within chats
 messages (id INTEGER PK, chat_id TEXT FK, role TEXT, content TEXT, timestamp TIMESTAMP)
@@ -189,7 +190,7 @@ messages (id INTEGER PK, chat_id TEXT FK, role TEXT, content TEXT, timestamp TIM
 models (id INTEGER PK, name TEXT UNIQUE, active BOOLEAN, supports_vision BOOLEAN,
         supports_image_generation BOOLEAN, is_downloaded BOOLEAN, last_used TIMESTAMP)
 
--- Document chunks for RAG (schema exists but NOT currently used by server)
+-- Document chunks for RAG
 documents (id INTEGER PK, chat_id TEXT FK, file_name TEXT, content TEXT,
            embedding BLOB, type TEXT, metadata TEXT, created_at TIMESTAMP)
 
@@ -201,10 +202,12 @@ settings (key TEXT PK, value TEXT, updated_at TIMESTAMP)
 
 ## Frontend Patterns
 
-### Libraries (loaded from CDN)
+### Libraries (bundled locally in `static/libs/`)
 - **Lucide** — Icon library. Icons are declared as `<i data-lucide="icon-name">` and activated via `lucide.createIcons()`.
 - **Marked.js** — Markdown parser. Custom renderer for code blocks with copy buttons.
 - **DOMPurify** — HTML sanitizer. All rendered markdown passes through `DOMPurify.sanitize()`.
+- **Prism.js** — Syntax highlighter applied dynamically to streaming code block rendering.
+- **Google Fonts** — Inter and Outfit fonts are bundled directly in `static/fonts/` for strict offline support.
 
 ### ES Module Structure
 The frontend uses ES modules (`type="module"` in the script tag). Key patterns:
@@ -232,14 +235,8 @@ The frontend reads SSE streams token-by-token. Key data fields:
 
 ## Known Limitations & Tech Debt
 
-1. **`document_store` is in-memory only** — All RAG data is lost on server restart. The `documents` DB table exists but is unused.
-2. **No concurrency protection** — Global model state is accessed without locks from async handlers and threads.
-3. **CDN dependencies** — Frontend requires internet on first load despite being an offline-first app.
-4. **macOS only** — TTS uses `say` command; MLX requires Apple Silicon.
-5. **No system prompt support** — No way to configure a persona or instructions.
-6. **No syntax highlighting** — Code blocks have language classes but no highlighter is loaded.
-7. **Static chat titles** — Set from first message, never updated.
-8. **FLUX error recovery** — If image generation crashes, the LLM may remain unloaded.
+1. **macOS only** — TTS uses `say` command; MLX requires Apple Silicon.
+2. **Static chat titles** — Set from first message, never updated.
 
 ---
 

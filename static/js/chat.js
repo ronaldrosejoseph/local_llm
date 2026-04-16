@@ -3,7 +3,7 @@
  */
 
 import { state, elements, API_URL } from './state.js';
-import { renderMarkdown, scrollToBottom } from './utils.js';
+import { renderMarkdown, scrollToBottom, highlightCode } from './utils.js';
 import { loadChatHistory } from './sidebar.js';
 import { speakResponse, stopSpeaking } from './speech.js';
 
@@ -157,6 +157,7 @@ export async function sendMessage(text = null) {
                                     streamRenderTimer = setTimeout(() => {
                                         streamRenderTimer = null;
                                         contentDiv.innerHTML = renderMarkdown(fullContent);
+                                        highlightCode(contentDiv);
                                         lucide.createIcons({ elements: Array.from(contentDiv.querySelectorAll('[data-lucide]')) });
                                     }, 50);
                                 }
@@ -189,6 +190,7 @@ export async function sendMessage(text = null) {
         clearTimeout(streamRenderTimer);
         if (contentDiv && fullContent) {
             contentDiv.innerHTML = renderMarkdown(fullContent);
+            highlightCode(contentDiv);
             lucide.createIcons({ elements: Array.from(contentDiv.querySelectorAll('[data-lucide]')) });
         }
 
@@ -239,6 +241,8 @@ export function appendMessage(role, content) {
         </div>
     `;
     elements.messagesContainer.appendChild(div);
+    const contentContainer = div.querySelector('.message-content');
+    highlightCode(contentContainer);
     lucide.createIcons({ elements: Array.from(div.querySelectorAll('[data-lucide]')) });
 }
 

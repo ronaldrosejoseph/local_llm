@@ -21,8 +21,8 @@ from typing import Optional
 from server import state
 from server.db import get_db_connection
 from server.config import load_config
-from server.models import ChatCreate
-from server.services.rag import get_embedder, build_rag_context, handle_vision_pdf_pagination
+from server.models import ChatCreate, SystemPromptUpdate
+from server.services.rag import get_embedder, build_rag_context, handle_vision_pdf_pagination, load_documents_from_db
 from server.services.web_search import perform_web_search
 from server.services.image_gen import run_flux_pipeline, flux_sse_generator
 
@@ -31,7 +31,6 @@ router = APIRouter()
 
 @router.get("/api/chats")
 def get_chats():
-    # Sync route unblocks asyncio threadpool
     with closing(get_db_connection()) as conn:
         chats = conn.execute("SELECT * FROM chats ORDER BY created_at DESC").fetchall()
     return [{"id": c["id"], "title": c["title"], "created_at": c["created_at"]} for c in chats]
@@ -39,7 +38,6 @@ def get_chats():
 
 @router.get("/api/chats/{chat_id}/messages")
 def get_messages(chat_id: str):
-    # Sync route unblocks asyncio threadpool
     with closing(get_db_connection()) as conn:
         messages = conn.execute("SELECT role, content FROM messages WHERE chat_id = ? ORDER BY timestamp",
                                 (chat_id,)).fetchall()
@@ -51,8 +49,34 @@ def delete_chat(chat_id: str):
     with closing(get_db_connection()) as conn:
         conn.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
         conn.commit()
+
+    # Clean up in-memory RAG state
+    if chat_id in state.document_store:
+        del state.document_store[chat_id]
+    if chat_id in state.rag_offsets:
+        del state.rag_offsets[chat_id]
+
     return {"status": "ok"}
 
+
+# --- System Prompt Endpoints ---
+
+@router.get("/api/chats/{chat_id}/system-prompt")
+def get_system_prompt(chat_id: str):
+    with closing(get_db_connection()) as conn:
+        row = conn.execute("SELECT system_prompt FROM chats WHERE id = ?", (chat_id,)).fetchone()
+    return {"system_prompt": (row["system_prompt"] or "") if row else ""}
+
+
+@router.put("/api/chats/{chat_id}/system-prompt")
+def set_system_prompt(chat_id: str, data: SystemPromptUpdate):
+    with closing(get_db_connection()) as conn:
+        conn.execute("UPDATE chats SET system_prompt = ? WHERE id = ?", (data.system_prompt, chat_id))
+        conn.commit()
+    return {"status": "ok"}
+
+
+# --- Main Chat Endpoint ---
 
 @router.post("/api/chat")
 async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
@@ -77,7 +101,18 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
         history = conn.execute("SELECT role, content FROM messages WHERE chat_id = ? ORDER BY timestamp",
                                (chat_id,)).fetchall()
 
-    # 4. Format prompt
+    # 4. Lazy-load RAG documents from DB if not already in memory
+    if chat_id not in state.document_store:
+        load_documents_from_db(chat_id)
+
+    # 5. Load system prompt
+    system_prompt = ""
+    with closing(get_db_connection()) as conn:
+        sp_row = conn.execute("SELECT system_prompt FROM chats WHERE id = ?", (chat_id,)).fetchone()
+        if sp_row and sp_row["system_prompt"]:
+            system_prompt = sp_row["system_prompt"]
+
+    # 6. Format prompt
     message_content = chat_data.message
 
     # --- RAG Pagination Detection ---
@@ -166,6 +201,10 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
     # --- Build message list with context injection ---
     messages = []
 
+    # Prepend system prompt if set
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+
     web_context = ""
     if message_content.strip().startswith("/web"):
         query = message_content.strip()[4:].strip()
@@ -200,6 +239,13 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
     prompt = state.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
     async def event_generator():
+        # --- Concurrency: acquire generation lock ---
+        if not state.generation_lock.acquire(blocking=False):
+            yield f"data: {json.dumps({'chat_id': chat_id})}\n\n"
+            yield f"data: {json.dumps({'error': 'Model is currently busy with another request. Please wait and try again.'})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+
         # Yield metadata first: chat_id and RAG window info
         yield f"data: {json.dumps({'chat_id': chat_id})}\n\n"
         if rag_meta:
@@ -266,12 +312,15 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
             print(f"Error during generation: {e}")
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
         finally:
-            # 6. Save assistant message even if partially generated
+            # Save assistant message even if partially generated
             if full_response:
                 with closing(get_db_connection()) as conn:
                     conn.execute("INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)",
                                  (chat_id, "assistant", full_response))
                     conn.commit()
+
+            # Release concurrency lock
+            state.generation_lock.release()
 
             yield "data: [DONE]\n\n"
 

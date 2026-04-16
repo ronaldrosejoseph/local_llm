@@ -81,6 +81,7 @@ def init_db():
     add_column_if_missing("models", "supports_image_generation", "BOOLEAN DEFAULT 0")
     add_column_if_missing("models", "is_downloaded", "BOOLEAN DEFAULT 0")
     add_column_if_missing("models", "last_used", "TIMESTAMP")
+    add_column_if_missing("chats", "system_prompt", "TEXT DEFAULT ''")
     
     # Seed default model if no models exist
     cursor.execute("SELECT COUNT(*) FROM models")

@@ -48,14 +48,14 @@ export function initMarked() {
             code({ text, lang }) {
                 const id = 'code-' + Math.random().toString(36).substr(2, 9);
                 const safeLang = (lang || 'text').replace(/[^a-z0-9-]/gi, '');
-                const escaped = text
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;');
+                
+                // DOMPurify will sanitize the HTML, so we just need minimal escaping here
+                // to prevent marked from breaking. Prism handles the rest.
+                const escaped = text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
                 return `
                     <div class="code-container">
-                        <button class="copy-btn" title="Copy to clipboard">
+                        <button class="copy-btn" title="Copy to clipboard" onclick="copyCode('${id}')">
                             <i data-lucide="copy"></i>
                         </button>
                         <pre><code id="${id}" class="language-${safeLang}">${escaped}</code></pre>
@@ -64,6 +64,13 @@ export function initMarked() {
             }
         }
     });
+}
+
+// Function to trigger Prism.js syntax highlighting
+export function highlightCode(container) {
+    if (window.Prism && container) {
+        Prism.highlightAllUnder(container);
+    }
 }
 
 // --- Scroll Management ---

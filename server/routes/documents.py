@@ -13,7 +13,7 @@ from contextlib import closing
 from server import state
 from server.db import get_db_connection
 from server.config import load_config
-from server.services.rag import get_embedder, pdf_to_images, CODE_EXTENSIONS
+from server.services.rag import get_embedder, pdf_to_images, CODE_EXTENSIONS, save_documents_to_db
 
 router = APIRouter()
 
@@ -55,6 +55,7 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
                              (chat_id, "user", f"[Attached Image: {file.filename}]"))
                 conn.commit()
 
+            save_documents_to_db(chat_id)
             return {"status": "ok", "chunks": 1, "filename": file.filename}
 
         # 2. Handle Text Docs and Code Files for RAG
@@ -115,6 +116,7 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
                                      (chat_id, "user", f"[Attached Scanned Document: {file.filename}]"))
                         conn.commit()
 
+                    save_documents_to_db(chat_id)
                     return {"status": "ok", "chunks": len(img_paths), "total_pages": total_pages,
                             "filename": file.filename, "vision": True}
                 else:
@@ -173,6 +175,8 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
             conn.execute("INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)",
                          (chat_id, "user", f"[Attached Document: {file.filename}]"))
             conn.commit()
+
+        save_documents_to_db(chat_id)
 
         return {"status": "ok", "chunks": len(chunks), "filename": file.filename,
                 "rag_active": emb_model is not None}

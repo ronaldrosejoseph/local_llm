@@ -39,3 +39,7 @@ class ConfigUpdate(BaseModel):
 
 class ModelAdd(BaseModel):
     name: str
+
+
+class SystemPromptUpdate(BaseModel):
+    system_prompt: str

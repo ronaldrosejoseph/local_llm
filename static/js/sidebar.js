@@ -80,6 +80,10 @@ export async function loadChat(chatId, title) {
         const ragStatus = document.getElementById('rag-status');
         if (ragStatus) ragStatus.style.display = 'none';
 
+        // Load system prompt
+        const sysPromptModule = await import('./system_prompt.js');
+        sysPromptModule.loadSystemPrompt(chatId);
+
         scrollToBottom(true);
         closeSidebar();
     } catch (error) {
@@ -100,6 +104,9 @@ export async function startNewChat() {
     // Reset RAG badge
     const ragStatus = document.getElementById('rag-status');
     if (ragStatus) ragStatus.style.display = 'none';
+
+    // Clear system prompt
+    import('./system_prompt.js').then(module => module.loadSystemPrompt(null));
 
     loadChatHistory();
     closeSidebar();
