@@ -55,7 +55,8 @@
                 <div class="model-info">
                     <span class="model-badge">LLM</span>
                     <span id="current-chat-title">New Conversation</span>
-                    <span id="rag-status" style="display:none; margin-left: 10px; background: rgba(85,170,255,0.1); border: 1px solid rgba(85,170,255,0.3); color: var(--accent-color); padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;"></span>
+                    <span id="rag-status"
+                        style="display:none; margin-left: 10px; background: rgba(85,170,255,0.1); border: 1px solid rgba(85,170,255,0.3); color: var(--accent-color); padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;"></span>
                 </div>
             </header>
 
@@ -174,7 +175,7 @@
                     <div class="setting-hints"><span>None</span><span>Strong</span></div>
                 </div>
             </div>
-            
+
             <!-- Document and Media Settings -->
             <div class="settings-section">
                 <h3 class="settings-section-title">📄 Document & Media</h3>
@@ -184,9 +185,9 @@
                         <span>PDF Text Batch Size</span>
                         <span class="setting-value" id="val-pdf-text-batch">50</span>
                     </div>
-                    <input type="range" class="setting-slider" id="cfg-pdf-text-batch" min="10" max="200" step="10"
+                    <input type="range" class="setting-slider" id="cfg-pdf-text-batch" min="10" max="500" step="10"
                         value="50">
-                    <div class="setting-hints"><span>10</span><span>200 chunks</span></div>
+                    <div class="setting-hints"><span>10</span><span>500 chunks</span></div>
                 </div>
 
                 <div class="setting-row">
@@ -194,9 +195,9 @@
                         <span>PDF Vision Batch Size</span>
                         <span class="setting-value" id="val-pdf-image-batch">5</span>
                     </div>
-                    <input type="range" class="setting-slider" id="cfg-pdf-image-batch" min="1" max="20" step="1"
+                    <input type="range" class="setting-slider" id="cfg-pdf-image-batch" min="1" max="50" step="1"
                         value="5">
-                    <div class="setting-hints"><span>1</span><span>20 pages</span></div>
+                    <div class="setting-hints"><span>1</span><span>50 pages</span></div>
                 </div>
 
                 <div class="setting-row">
@@ -204,7 +205,8 @@
                         <span>Image Gen. Resolution</span>
                         <span class="setting-value"></span>
                     </div>
-                    <select id="cfg-image-res" style="width: 100%; padding: 8px; border-radius: 6px; background: var(--bg-secondary); color: var(--text-color); border: 1px solid var(--border-color); margin-top: 5px;">
+                    <select id="cfg-image-res"
+                        style="width: 100%; padding: 8px; border-radius: 6px; background: var(--bg-secondary); color: var(--text-color); border: 1px solid var(--border-color); margin-top: 5px;">
                         <option value="512x512">512x512 (Fastest)</option>
                         <option value="720x720" selected>720x720 (Balanced)</option>
                         <option value="1024x1024">1024x1024 (Quality)</option>
@@ -215,8 +217,10 @@
             <!-- Model Library -->
             <div class="settings-section">
                 <h3 class="settings-section-title">🤖 Model Library</h3>
-                <p class="settings-section-desc">Add a new model from HF (must be <code>mlx-community/</code>). Deleting a model removes it from disk (<code>~/.cache/huggingface/hub/</code>). The active model cannot be deleted.</p>
-                
+                <p class="settings-section-desc">Add a new model from HF (must be <code>mlx-community/</code>). Deleting
+                    a model removes it from disk (<code>~/.cache/huggingface/hub/</code>). The active model cannot be
+                    deleted.</p>
+
                 <div class="settings-add-model">
                     <input type="text" id="new-model-input" placeholder="mlx-community/Llama-3-8B-Instruct-4bit">
                     <button id="add-model-btn" title="Add Model">
