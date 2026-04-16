@@ -23,16 +23,26 @@ async def say_endpoint(data: SayRequest):
         raise HTTPException(status_code=400, detail="Invalid text content for speech.")
 
     try:
-        # Spawn tracked process
+        # Stop any currently running say processes
+        for p in list(state.say_processes):
+            if p.poll() is None:
+                try:
+                    p.terminate()
+                except Exception:
+                    pass
+            state.say_processes.remove(p)
+
+        # Spawn new speech process
         proc = subprocess.Popen(["say", text])
         state.say_processes.add(proc)
 
-        # Periodically clean up finished processes avoiding memory leak
+        # Cleanup finished processes to avoid memory leak
         for p in list(state.say_processes):
             if p.poll() is not None:
                 state.say_processes.remove(p)
 
         return {"status": "ok"}
+
     except Exception as e:
         print(f"Error in say_endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
