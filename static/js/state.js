@@ -45,6 +45,10 @@ export const elements = {
     settingsModal: document.getElementById('settings-modal'),
     settingsOpenBtn: document.getElementById('settings-open-btn'),
     settingsCloseBtn: document.getElementById('settings-close-btn'),
+    systemPromptToggle: document.getElementById('system-prompt-toggle'),
+    systemPromptPanel: document.getElementById('system-prompt-panel'),
+    systemPromptSave: document.getElementById('system-prompt-save'),
+    systemPromptInput: document.getElementById('system-prompt-input'),
 };
 
 export { API_URL };

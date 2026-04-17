@@ -16,6 +16,7 @@ class Message(BaseModel):
 
 class ChatCreate(BaseModel):
     message: str
+    system_prompt: Optional[str] = None
 
 
 class ChatResponse(BaseModel):

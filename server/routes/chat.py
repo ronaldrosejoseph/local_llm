@@ -196,7 +196,8 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
         chat_exists = conn.execute("SELECT id FROM chats WHERE id = ?", (chat_id,)).fetchone()
         if not chat_exists:
             title = chat_data.message[:50] + "..." if len(chat_data.message) > 50 else chat_data.message
-            conn.execute("INSERT INTO chats (id, title) VALUES (?, ?)", (chat_id, title))
+            conn.execute("INSERT INTO chats (id, title, system_prompt) VALUES (?, ?, ?)", 
+                         (chat_id, title, chat_data.system_prompt))
             conn.commit()
 
     # 2. Save user message

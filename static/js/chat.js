@@ -56,10 +56,15 @@ export async function sendMessage(text = null) {
         const ragStatusEl = document.getElementById('rag-status');
         if (ragStatusEl) ragStatusEl.style.display = 'none';
 
+        const body = { message: content };
+        if (!requestChatId) {
+            body.system_prompt = elements.systemPromptInput.value.trim();
+        }
+
         const response = await fetch(`${API_URL}/api/chat${requestChatId ? `?chat_id=${requestChatId}` : ''}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: content }),
+            body: JSON.stringify(body),
             signal: state.abortController.signal
         });
 

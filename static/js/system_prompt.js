@@ -4,12 +4,11 @@
 
 import { state, elements, API_URL } from './state.js';
 
-const panel = document.getElementById('system-prompt-panel');
-const input = document.getElementById('system-prompt-input');
-const toggle = document.getElementById('system-prompt-toggle');
-const saveBtn = document.getElementById('system-prompt-save');
-
 export function toggleSystemPrompt() {
+    const panel = elements.systemPromptPanel;
+    const input = elements.systemPromptInput;
+    const toggle = elements.systemPromptToggle;
+
     const isHidden = !panel.classList.contains('open');
     panel.classList.toggle('open', isHidden);
     toggle.classList.toggle('active', isHidden);
@@ -17,6 +16,10 @@ export function toggleSystemPrompt() {
 }
 
 export async function loadSystemPrompt(chatId) {
+    const input = elements.systemPromptInput;
+    const toggle = elements.systemPromptToggle;
+    const panel = elements.systemPromptPanel;
+
     if (!chatId) {
         input.value = '';
         panel.classList.remove('open');
@@ -36,9 +39,17 @@ export async function loadSystemPrompt(chatId) {
 }
 
 export async function saveSystemPrompt() {
-    if (!state.currentChatId) return;
-
+    const input = elements.systemPromptInput;
+    const toggle = elements.systemPromptToggle;
+    const saveBtn = elements.systemPromptSave;
     const prompt = input.value.trim();
+
+    // If it's a new chat, we just keep it in the UI and show "Applied"
+    if (!state.currentChatId) {
+        toggle.classList.toggle('has-prompt', !!prompt);
+        showSaveFeedback('Applied', '#50fa7b');
+        return;
+    }
 
     try {
         const res = await fetch(`${API_URL}/api/chats/${state.currentChatId}/system-prompt`, {
@@ -50,17 +61,20 @@ export async function saveSystemPrompt() {
         if (!res.ok) throw new Error('Failed to save');
 
         toggle.classList.toggle('has-prompt', !!prompt);
-
-        // Visual feedback
-        const originalHTML = saveBtn.innerHTML;
-        saveBtn.textContent = '✓ Saved';
-        saveBtn.style.color = '#50fa7b';
-        setTimeout(() => {
-            saveBtn.innerHTML = originalHTML;
-            saveBtn.style.color = '';
-            lucide.createIcons({ elements: Array.from(saveBtn.querySelectorAll('[data-lucide]')) });
-        }, 1500);
+        showSaveFeedback('✓ Saved', '#50fa7b');
     } catch (err) {
         console.error('Error saving system prompt:', err);
     }
+}
+
+function showSaveFeedback(text, color) {
+    const saveBtn = elements.systemPromptSave;
+    const originalHTML = saveBtn.innerHTML;
+    saveBtn.textContent = text;
+    saveBtn.style.color = color;
+    setTimeout(() => {
+        saveBtn.innerHTML = originalHTML;
+        saveBtn.style.color = '';
+        lucide.createIcons({ elements: Array.from(saveBtn.querySelectorAll('[data-lucide]')) });
+    }, 1500);
 }

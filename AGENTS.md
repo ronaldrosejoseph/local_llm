@@ -82,6 +82,7 @@
 | `static/js/settings.js` | Settings modal, config sliders, model library UI. |
 | `static/js/documents.js` | File upload handler, attachment pill UI. |
 | `static/js/speech.js` | TTS (server API), speech-to-text (Web Speech API). |
+| `static/js/system_prompt.js` | System prompt management — per-chat persona/instruction editing. |
 | `static/uploads/` | Uploaded documents and images (runtime, gitignored). |
 | `static/images/` | Generated images from FLUX (runtime, gitignored). |
 
@@ -105,7 +106,9 @@
 |--------|-------|---------|
 | `GET` | `/api/chats?q=` | List all chats (id, title, updated_at). Optional `q` parameter searches by title. |
 | `GET` | `/api/chats/{chat_id}/messages` | Get messages for a chat |
-| `POST` | `/api/chat?chat_id=` | Send message, returns SSE stream of tokens |
+| `POST` | `/api/chat?chat_id=` | Send message (includes `system_prompt` for new chats), returns SSE tokens |
+| `GET` | `/api/chats/{chat_id}/system-prompt` | Get the system prompt for a chat |
+| `PUT` | `/api/chats/{chat_id}/system-prompt` | Update the system prompt for a chat |
 | `POST` | `/api/chats/{chat_id}/generate-title`| Auto-generates a 3-5 word title using the LLM for a new conversation |
 | `DELETE` | `/api/chats/{chat_id}` | Delete a chat (including all messages, docs, and physical assets) |
 | `POST` | `/api/upload-document` | Upload file for RAG (multipart form) |
