@@ -8,7 +8,7 @@ import json
 CONFIG_PATH = "config.json"
 DEFAULT_CONFIG = {
     "max_tokens": 8192,
-    "temperature": 0.7,
+    "temperature": 0.3,
     "top_p": 0.9,
     "repetition_penalty": 1.1,
     "pdf_text_pages_per_batch": 50,
