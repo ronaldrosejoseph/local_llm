@@ -26,6 +26,7 @@ from server.models import ChatCreate, SystemPromptUpdate
 from server.services.rag import get_embedder, build_rag_context, handle_vision_pdf_pagination, load_documents_from_db
 from server.services.web_search import perform_web_search
 from server.services.image_gen import run_flux_pipeline, flux_sse_generator
+from server.services.memory import assemble_context, post_generation_tasks
 
 router = APIRouter()
 
@@ -206,22 +207,18 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                      (chat_id, "user", chat_data.message))
         conn.commit()
 
-        # 3. Get history for prompt
-        history = conn.execute("SELECT role, content FROM messages WHERE chat_id = ? ORDER BY timestamp",
-                               (chat_id,)).fetchall()
-
-    # 4. Lazy-load RAG documents from DB if not already in memory
+    # 3. Lazy-load RAG documents from DB if not already in memory
     if chat_id not in state.document_store:
         load_documents_from_db(chat_id)
 
-    # 5. Load system prompt
+    # 4. Load system prompt
     system_prompt = ""
     with closing(get_db_connection()) as conn:
         sp_row = conn.execute("SELECT system_prompt FROM chats WHERE id = ?", (chat_id,)).fetchone()
         if sp_row and sp_row["system_prompt"]:
             system_prompt = sp_row["system_prompt"]
 
-    # 6. Format prompt
+    # 5. Format prompt
     message_content = chat_data.message
 
     # --- RAG Pagination Detection ---
@@ -307,13 +304,7 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
             media_type="text/event-stream"
         )
 
-    # --- Build message list with context injection ---
-    messages = []
-
-    # Prepend system prompt if set
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-
+    # --- Build context using hybrid memory system ---
     web_context = ""
     if message_content.strip().startswith("/web"):
         query = message_content.strip()[4:].strip()
@@ -328,22 +319,21 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
     if vision_rag_meta:
         rag_meta = vision_rag_meta
 
-    for i, h in enumerate(history):
-        content = h["content"]
+    # Build RAG document context (existing system)
+    doc_context = ""
+    if chat_id in state.document_store and state.document_store[chat_id]:
+        doc_context, text_rag_meta = build_rag_context(chat_id, message_content)
+        if text_rag_meta and not rag_meta:
+            rag_meta = text_rag_meta
 
-        # Inject RAG / Web Context into the latest user message
-        if i == len(history) - 1:
-            doc_context = ""
-            if chat_id in state.document_store and state.document_store[chat_id]:
-                doc_context, text_rag_meta = build_rag_context(chat_id, content)
-                if text_rag_meta and not rag_meta:
-                    rag_meta = text_rag_meta
-
-            combined_context = web_context + ("\n" if web_context and doc_context else "") + doc_context
-            if combined_context:
-                content = f"{combined_context}\nInstructions: Utilizing the context provided above, answer the following query:\n\n{content.replace('/web', '').strip()}"
-
-        messages.append({"role": h["role"], "content": content})
+    # Assemble context via hybrid memory pipeline
+    messages = assemble_context(
+        chat_id=chat_id,
+        current_message=message_content,
+        system_prompt=system_prompt,
+        rag_context=doc_context,
+        web_context=web_context,
+    )
 
     prompt = state.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
@@ -383,7 +373,7 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                 formatted_prompt = apply_vlm_template(
                     state.processor,
                     state.vlm_config,  # Use the cached config
-                    messages,  # Use the original messages list
+                    messages,  # Use the assembled messages list
                     num_images=len(image_paths)
                 )
 
@@ -422,15 +412,22 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
         finally:
             # Save assistant message even if partially generated
+            assistant_msg_id = None
             if full_response:
                 with closing(get_db_connection()) as conn:
-                    conn.execute("INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)",
+                    cursor = conn.execute("INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)",
                                  (chat_id, "assistant", full_response))
+                    assistant_msg_id = cursor.lastrowid
                     conn.commit()
 
             # Release concurrency lock
             state.generation_lock.release()
 
+            # Kick off async memory tasks (embedding + summarization)
+            if full_response and assistant_msg_id:
+                post_generation_tasks(chat_id, chat_data.message, full_response, assistant_msg_id)
+
             yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+

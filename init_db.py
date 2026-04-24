@@ -82,6 +82,11 @@ def init_db():
     add_column_if_missing("models", "is_downloaded", "BOOLEAN DEFAULT 0")
     add_column_if_missing("models", "last_used", "TIMESTAMP")
     add_column_if_missing("chats", "system_prompt", "TEXT DEFAULT ''")
+
+    # --- Memory system columns ---
+    add_column_if_missing("messages", "embedding", "BLOB")           # Vector memory (turn-pair embeddings)
+    add_column_if_missing("chats", "summary", "TEXT")                # Progressive summary of older turns
+    add_column_if_missing("chats", "summary_through_msg_id", "INTEGER DEFAULT 0")  # Watermark: last summarized msg id
     
     # Seed default model if no models exist
     cursor.execute("SELECT COUNT(*) FROM models")

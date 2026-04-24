@@ -19,7 +19,7 @@ def get_config():
 def update_config(data: ConfigUpdate):
     cfg = load_config()
     if data.max_tokens is not None:
-        cfg["max_tokens"] = max(256, min(32768, int(data.max_tokens)))
+        cfg["max_tokens"] = max(256, min(131072, int(data.max_tokens)))
     if data.temperature is not None:
         cfg["temperature"] = round(max(0.0, min(2.0, data.temperature)), 2)
     if data.top_p is not None:
@@ -32,5 +32,12 @@ def update_config(data: ConfigUpdate):
         cfg["pdf_image_pages_per_batch"] = max(1, int(data.pdf_image_pages_per_batch))
     if data.image_generation_resolution is not None:
         cfg["image_generation_resolution"] = data.image_generation_resolution
+    # Memory system
+    if data.memory_top_k is not None:
+        cfg["memory_top_k"] = max(0, min(10, int(data.memory_top_k)))
+    if data.memory_max_tokens is not None:
+        cfg["memory_max_tokens"] = max(0, min(2000, int(data.memory_max_tokens)))
+    if data.summary_max_tokens is not None:
+        cfg["summary_max_tokens"] = max(0, min(1000, int(data.summary_max_tokens)))
     save_config(cfg)
     return cfg

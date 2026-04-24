@@ -60,6 +60,7 @@
 | `server/services/llm.py` | Model loading (VLM-first, LLM fallback), VRAM cleanup, cache detection. |
 | `server/services/rag.py` | Embedder loading, PDF-to-image, document chunking, semantic retrieval, vision PDF pagination. |
 | `server/services/image_gen.py` | Shared FLUX pipeline for `/imagine` and `/edit` (deduplicated). |
+| `server/services/memory.py` | Hybrid memory system: token-aware rolling window, progressive summarization, cross-chat vector retrieval. |
 | `server/services/web_search.py` | DuckDuckGo scraping + weather widget. |
 | `server/routes/chat.py` | Chat CRUD + main streaming generation endpoint. |
 | `server/routes/model_routes.py` | Model list, add (SSE download), switch (SSE load), delete. |
@@ -151,6 +152,15 @@
 - Pagination via `state.rag_offsets` dict — controlled by `/next` command.
 - Code files (detected by extension) are included in full rather than chunked.
 
+### Hybrid Memory System
+The chat endpoint uses a three-layer memory system instead of sending the entire conversation history:
+- **Rolling Window** — Token-budget-aware: fills recent messages newest-first until the context budget is spent. Provides short-term conversational coherence.
+- **Progressive Summary** — Older messages that fall out of the rolling window are incrementally summarized by the LLM and stored on the `chats.summary` column. Runs asynchronously post-generation.
+- **Vector Memory** — Each user+assistant turn pair is embedded (via `all-MiniLM-L6-v2`) and stored as a BLOB on `messages.embedding`. At query time, cosine similarity retrieves relevant past exchanges across all chats.
+- **Context Assembly** (`assemble_context()`) allocates the model's context window as: system prompt → summary → retrieved memories → rolling window → current message, with generation headroom reserved.
+- **Post-Generation Tasks** — After each response, a background thread embeds the turn pair and checks if summarization is needed.
+- Configurable via `config.json`: `memory_top_k`, `memory_max_tokens`, `summary_max_tokens`.
+
 ### Image Generation
 - Uses `mflux` library (FLUX.1 Schnell, 4-bit quantized).
 - **VRAM sharing:** The LLM is fully unloaded before FLUX runs, then reloaded after.
@@ -191,10 +201,12 @@ say_processes = set()      # Tracked subprocess.Popen objects for TTS
 
 ```sql
 -- Chat conversations
-chats (id TEXT PK, title TEXT, created_at TIMESTAMP, updated_at TIMESTAMP, system_prompt TEXT)
+chats (id TEXT PK, title TEXT, created_at TIMESTAMP, updated_at TIMESTAMP, system_prompt TEXT,
+       summary TEXT, summary_through_msg_id INTEGER)  -- Progressive memory summary
 
 -- Messages within chats
-messages (id INTEGER PK, chat_id TEXT FK, role TEXT, content TEXT, timestamp TIMESTAMP)
+messages (id INTEGER PK, chat_id TEXT FK, role TEXT, content TEXT, timestamp TIMESTAMP,
+         embedding BLOB)  -- Vector memory (turn-pair embeddings stored as numpy float32)
 
 -- Available models in the library
 models (id INTEGER PK, name TEXT UNIQUE, active BOOLEAN, supports_vision BOOLEAN,

@@ -45,6 +45,10 @@ function applyConfigToUI(cfg) {
     set('cfg-pdf-text-batch', 'val-pdf-text-batch', cfg.pdf_text_pages_per_batch || 50);
     set('cfg-pdf-image-batch', 'val-pdf-image-batch', cfg.pdf_image_pages_per_batch || 5);
     set('cfg-image-res', null, cfg.image_generation_resolution || "720x720");
+    // Memory settings
+    set('cfg-memory-top-k', 'val-memory-top-k', cfg.memory_top_k ?? 5);
+    set('cfg-memory-max-tokens', 'val-memory-max-tokens', cfg.memory_max_tokens ?? 600);
+    set('cfg-summary-max-tokens', 'val-summary-max-tokens', cfg.summary_max_tokens ?? 400);
 }
 
 function scheduleConfigSave(patch) {
@@ -93,6 +97,19 @@ export function initConfigSliders() {
     });
     document.getElementById('cfg-image-res').addEventListener('change', function () {
         scheduleConfigSave({ image_generation_resolution: this.value });
+    });
+    // Memory sliders
+    document.getElementById('cfg-memory-top-k').addEventListener('input', function () {
+        document.getElementById('val-memory-top-k').textContent = this.value;
+        scheduleConfigSave({ memory_top_k: parseInt(this.value) });
+    });
+    document.getElementById('cfg-memory-max-tokens').addEventListener('input', function () {
+        document.getElementById('val-memory-max-tokens').textContent = this.value;
+        scheduleConfigSave({ memory_max_tokens: parseInt(this.value) });
+    });
+    document.getElementById('cfg-summary-max-tokens').addEventListener('input', function () {
+        document.getElementById('val-summary-max-tokens').textContent = this.value;
+        scheduleConfigSave({ summary_max_tokens: parseInt(this.value) });
     });
 }
 

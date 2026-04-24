@@ -13,7 +13,11 @@ DEFAULT_CONFIG = {
     "repetition_penalty": 1.1,
     "pdf_text_pages_per_batch": 50,
     "pdf_image_pages_per_batch": 5,
-    "image_generation_resolution": "720x720"
+    "image_generation_resolution": "720x720",
+    # Memory system
+    "memory_top_k": 5,             # Number of past exchanges to retrieve via vector search
+    "memory_max_tokens": 600,      # Max tokens for retrieved memories
+    "summary_max_tokens": 400,     # Max tokens for progressive chat summary
 }
 
 

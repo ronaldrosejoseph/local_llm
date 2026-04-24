@@ -158,9 +158,9 @@
                         <span>Max Tokens</span>
                         <span class="setting-value" id="val-max-tokens">8192</span>
                     </div>
-                    <input type="range" class="setting-slider" id="cfg-max-tokens" min="256" max="32768" step="256"
+                    <input type="range" class="setting-slider" id="cfg-max-tokens" min="256" max="131072" step="256"
                         value="8192">
-                    <div class="setting-hints"><span>256</span><span>32 768</span></div>
+                    <div class="setting-hints"><span>256</span><span>131 072</span></div>
                 </div>
 
                 <div class="setting-row">
@@ -228,6 +228,41 @@
                         <option value="720x720" selected>720x720 (Balanced)</option>
                         <option value="1024x1024">1024x1024 (Quality)</option>
                     </select>
+                </div>
+            </div>
+
+            <!-- Memory System -->
+            <div class="settings-section">
+                <h3 class="settings-section-title">🧠 Memory</h3>
+
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <span>Retrieved Memories</span>
+                        <span class="setting-value" id="val-memory-top-k">5</span>
+                    </div>
+                    <input type="range" class="setting-slider" id="cfg-memory-top-k" min="0" max="10" step="1"
+                        value="5">
+                    <div class="setting-hints"><span>Off</span><span>10 exchanges</span></div>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <span>Memory Token Budget</span>
+                        <span class="setting-value" id="val-memory-max-tokens">600</span>
+                    </div>
+                    <input type="range" class="setting-slider" id="cfg-memory-max-tokens" min="0" max="2000" step="50"
+                        value="600">
+                    <div class="setting-hints"><span>Off</span><span>2 000 tokens</span></div>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <span>Summary Max Tokens</span>
+                        <span class="setting-value" id="val-summary-max-tokens">400</span>
+                    </div>
+                    <input type="range" class="setting-slider" id="cfg-summary-max-tokens" min="0" max="1000" step="50"
+                        value="400">
+                    <div class="setting-hints"><span>Off</span><span>1 000 tokens</span></div>
                 </div>
             </div>
 
