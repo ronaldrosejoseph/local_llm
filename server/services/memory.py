@@ -395,8 +395,8 @@ def _get_model_context_length() -> int:
         print(f"Memory: Could not detect context length: {e}")
 
     # Modern models typically support large context windows
-    print("Memory: Using default context window = 131072")
-    return 131072
+    print("Memory: Using default context window = 8192")
+    return 8192
 
 
 def _build_rolling_window(chat_id: str, token_budget: int) -> list[dict]:

@@ -55,6 +55,9 @@ def get_embedder():
     if state.embedder_model is None:
         try:
             from sentence_transformers import SentenceTransformer
+            import transformers
+            transformers.logging.set_verbosity_error()
+            
             # Set local_files_only=False allows fallback to cache if offline
             state.embedder_model = SentenceTransformer("all-MiniLM-L6-v2")
             print("Embedder model loaded successfully.")
