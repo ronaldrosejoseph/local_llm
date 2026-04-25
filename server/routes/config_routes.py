@@ -32,11 +32,8 @@ def update_config(data: ConfigUpdate):
         cfg["pdf_image_pages_per_batch"] = max(1, int(data.pdf_image_pages_per_batch))
     if data.image_generation_resolution is not None:
         cfg["image_generation_resolution"] = data.image_generation_resolution
-    # Memory system
-    if data.memory_top_k is not None:
-        cfg["memory_top_k"] = max(0, min(10, int(data.memory_top_k)))
-    if data.memory_max_tokens is not None:
-        cfg["memory_max_tokens"] = max(0, min(2000, int(data.memory_max_tokens)))
+    if data.rolling_window_max_tokens is not None:
+        cfg["rolling_window_max_tokens"] = max(0, min(16384, int(data.rolling_window_max_tokens)))
     if data.summary_max_tokens is not None:
         cfg["summary_max_tokens"] = max(0, min(1000, int(data.summary_max_tokens)))
     save_config(cfg)

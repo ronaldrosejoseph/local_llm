@@ -243,32 +243,22 @@
 
                 <div class="setting-row">
                     <div class="setting-label">
-                        <span>Retrieved Memories</span>
-                        <span class="setting-value" id="val-memory-top-k">5</span>
+                        <span>Rolling Window Token Budget</span>
+                        <span class="setting-value" id="val-rolling-max-tokens">4096</span>
                     </div>
-                    <input type="range" class="setting-slider" id="cfg-memory-top-k" min="0" max="10" step="1"
-                        value="5">
-                    <div class="setting-hints"><span>Off</span><span>10 exchanges</span></div>
+                    <input type="range" class="setting-slider" id="cfg-rolling-max-tokens" min="0" max="16000" step="100"
+                        value="4096">
+                    <div class="setting-hints"><span>Off</span><span>16000 tokens</span></div>
                 </div>
 
                 <div class="setting-row">
                     <div class="setting-label">
-                        <span>Memory Token Budget</span>
-                        <span class="setting-value" id="val-memory-max-tokens">600</span>
-                    </div>
-                    <input type="range" class="setting-slider" id="cfg-memory-max-tokens" min="0" max="2000" step="50"
-                        value="600">
-                    <div class="setting-hints"><span>Off</span><span>2 000 tokens</span></div>
-                </div>
-
-                <div class="setting-row">
-                    <div class="setting-label">
-                        <span>Summary Max Tokens</span>
+                        <span>Summary Token Budget</span>
                         <span class="setting-value" id="val-summary-max-tokens">400</span>
                     </div>
                     <input type="range" class="setting-slider" id="cfg-summary-max-tokens" min="0" max="1000" step="50"
                         value="400">
-                    <div class="setting-hints"><span>Off</span><span>1 000 tokens</span></div>
+                    <div class="setting-hints"><span>Off</span><span>1000 tokens</span></div>
                 </div>
             </div>
 

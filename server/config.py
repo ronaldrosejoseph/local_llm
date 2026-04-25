@@ -14,9 +14,7 @@ DEFAULT_CONFIG = {
     "pdf_text_pages_per_batch": 50,
     "pdf_image_pages_per_batch": 5,
     "image_generation_resolution": "720x720",
-    # Memory system
-    "memory_top_k": 5,             # Number of past exchanges to retrieve via vector search
-    "memory_max_tokens": 600,      # Max tokens for retrieved memories
+    "rolling_window_max_tokens": 4096, # Max tokens for recent messages before falling back to summary
     "summary_max_tokens": 400,     # Max tokens for progressive chat summary
 }
 

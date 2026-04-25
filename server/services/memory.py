@@ -53,161 +53,6 @@ def count_message_tokens(messages: list[dict]) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Message embedding (for vector memory)
-# ---------------------------------------------------------------------------
-
-def embed_message_pair(user_content: str, assistant_content: str) -> np.ndarray | None:
-    """Embed a user+assistant turn pair for semantic retrieval.
-    
-    We concatenate both messages so the embedding captures the full
-    semantic context of the exchange (a standalone answer is meaningless
-    without its question).
-    """
-    embedder = get_embedder()
-    if embedder is None:
-        return None
-
-    combined = f"User: {user_content}\nAssistant: {assistant_content}"
-    # Truncate to embedder's max sequence length (~256 tokens for MiniLM)
-    combined = combined[:2000]
-    try:
-        return embedder.encode([combined])[0]
-    except Exception as e:
-        print(f"Memory: Failed to embed message pair: {e}")
-        return None
-
-
-def save_message_embedding(message_id: int, embedding: np.ndarray):
-    """Persist an embedding blob to an existing messages row."""
-    blob = embedding.tobytes()
-    with closing(get_db_connection()) as conn:
-        conn.execute(
-            "UPDATE messages SET embedding = ? WHERE id = ?",
-            (blob, message_id)
-        )
-        conn.commit()
-
-
-def embed_and_save_turn(chat_id: str, user_content: str, assistant_content: str, assistant_msg_id: int):
-    """Compute and store embedding for the latest turn pair.
-    
-    Called asynchronously after generation completes.
-    """
-    emb = embed_message_pair(user_content, assistant_content)
-    if emb is not None:
-        save_message_embedding(assistant_msg_id, emb)
-        print(f"Memory: Embedded turn pair for message {assistant_msg_id}")
-
-
-# ---------------------------------------------------------------------------
-# Vector retrieval (cross-chat)
-# ---------------------------------------------------------------------------
-
-# Minimum cosine similarity to consider a memory "relevant"
-MEMORY_SIMILARITY_THRESHOLD = 0.55
-
-
-def retrieve_relevant_memories(query: str, current_chat_id: str,
-                                top_k: int = 5, max_tokens: int = 500) -> list[dict]:
-    """Search all chats for semantically relevant past turn-pairs.
-    
-    Returns a list of dicts: [{chat_title, role, content, similarity}, ...]
-    Excludes messages from the current chat's rolling window (dedup handled by caller).
-    """
-    embedder = get_embedder()
-    if embedder is None:
-        return []
-
-    try:
-        query_emb = embedder.encode([query[:2000]])[0]
-    except Exception as e:
-        print(f"Memory: Failed to encode query: {e}")
-        return []
-
-    # Fetch all messages that have embeddings (across all chats)
-    with closing(get_db_connection()) as conn:
-        rows = conn.execute("""
-            SELECT m.id, m.chat_id, m.role, m.content, m.embedding,
-                   c.title AS chat_title
-            FROM messages m
-            JOIN chats c ON m.chat_id = c.id
-            WHERE m.embedding IS NOT NULL
-            ORDER BY m.timestamp DESC
-        """).fetchall()
-
-    if not rows:
-        return []
-
-    # Decode embeddings and compute cosine similarity
-    candidates = []
-    for row in rows:
-        try:
-            emb = np.frombuffer(row["embedding"], dtype=np.float32).copy()
-            candidates.append({
-                "id": row["id"],
-                "chat_id": row["chat_id"],
-                "chat_title": row["chat_title"],
-                "role": row["role"],
-                "content": row["content"],
-                "emb": emb,
-            })
-        except Exception:
-            continue
-
-    if not candidates:
-        return []
-
-    emb_matrix = np.array([c["emb"] for c in candidates])
-    q_norm = query_emb / (np.linalg.norm(query_emb) + 1e-10)
-    d_norms = emb_matrix / (np.linalg.norm(emb_matrix, axis=1, keepdims=True) + 1e-10)
-    similarities = np.dot(d_norms, q_norm)
-
-    # Rank and select top-k
-    top_indices = np.argsort(similarities)[::-1]
-
-    results = []
-    token_budget = max_tokens
-    seen_msg_ids = set()
-
-    for idx in top_indices:
-        if len(results) >= top_k:
-            break
-
-        candidate = candidates[idx]
-        sim_score = float(similarities[idx])
-
-        # Skip memories below relevance threshold
-        if sim_score < MEMORY_SIMILARITY_THRESHOLD:
-            break  # Sorted descending, so all remaining are worse
-
-        if candidate["id"] in seen_msg_ids:
-            continue
-
-        # Get the paired user message for this assistant response
-        # (We store embeddings on the assistant message of each turn)
-        pair_content = candidate["content"]
-        pair_tokens = count_tokens(pair_content)
-        if pair_tokens > token_budget:
-            continue
-
-        results.append({
-            "id": candidate["id"],
-            "chat_id": candidate["chat_id"],
-            "chat_title": candidate["chat_title"],
-            "role": candidate["role"],
-            "content": candidate["content"],
-            "similarity": float(similarities[idx]),
-        })
-        seen_msg_ids.add(candidate["id"])
-        token_budget -= pair_tokens
-
-    if results:
-        print(f"Memory: Retrieved {len(results)} memories "
-              f"(sim range: {results[0]['similarity']:.3f}–{results[-1]['similarity']:.3f})")
-    return results
-
-
-# ---------------------------------------------------------------------------
 # Context assembly (the core pipeline)
 # ---------------------------------------------------------------------------
 
@@ -221,8 +66,7 @@ def assemble_context(chat_id: str, current_message: str, system_prompt: str,
       3. Generation headroom    — reserved (max_tokens from config)
       4. Rolling window         — flex layer, fills remaining budget
       5. Chat summary           — included if exists
-      6. Retrieved memories     — semantic search across chats
-      7. RAG/Web context        — injected into current message
+      6. RAG/Web context        — injected into current message
     
     Returns the final messages list ready for chat template formatting.
     """
@@ -232,12 +76,11 @@ def assemble_context(chat_id: str, current_message: str, system_prompt: str,
     # Determine total context window from model config
     context_window = _get_model_context_length()
 
-    # Safety: cap generation headroom so input always gets at least 25% of context
-    gen_headroom = min(max_gen_tokens, int(context_window * 0.75))
+    # Safety: cap generation headroom so input always gets at least 50% of context
+    gen_headroom = min(max_gen_tokens, int(context_window * 0.5))
     
     memory_cfg = {
-        "memory_top_k": cfg.get("memory_top_k", 5),
-        "memory_max_tokens": cfg.get("memory_max_tokens", 600),
+        "rolling_window_max_tokens": cfg.get("rolling_window_max_tokens", 4096),
         "summary_max_tokens": cfg.get("summary_max_tokens", 400),
     }
 
@@ -283,41 +126,17 @@ def assemble_context(chat_id: str, current_message: str, system_prompt: str,
                 summary = ""  # Too large, skip
                 summary_tokens = 0
 
-    # 5. Reserve budget for vector memories (will fill later)
-    memory_budget = min(memory_cfg["memory_max_tokens"], remaining_budget // 3)
-    remaining_budget -= memory_budget
-
-    # 6. Fill rolling window with remaining budget (newest messages first)
-    rolling_window = _build_rolling_window(chat_id, remaining_budget)
-    rolling_msg_ids = {m["id"] for m in rolling_window if "id" in m}
-
-    # 7. Retrieve vector memories (cross-chat, deduplicated)
-    #    Skip on the very first message of a new chat — no established topic yet.
-    retrieved_memories = []
-    is_first_message = len(rolling_window) == 0
-    if memory_budget > 50 and not is_first_message:
-        raw_memories = retrieve_relevant_memories(
-            current_message, chat_id,
-            top_k=memory_cfg["memory_top_k"],
-            max_tokens=memory_budget
-        )
-        # Deduplicate: exclude messages already in the rolling window
-        retrieved_memories = [m for m in raw_memories if m["id"] not in rolling_msg_ids]
-
+    # 5. Fill rolling window with remaining budget (capped to prevent massive processing times)
+    rolling_budget = min(remaining_budget, memory_cfg["rolling_window_max_tokens"])
+    rolling_window = _build_rolling_window(chat_id, rolling_budget)
+    
     # --- Assemble final messages list ---
 
-    # System prompt + summary + memories as system context
+    # System prompt + summary as system context
     system_content = system_prompt or ""
 
     if summary:
         system_content += f"\n\nCONVERSATION SUMMARY (earlier context):\n{summary}"
-
-    if retrieved_memories:
-        memory_text = "\n\nRELEVANT PAST EXCHANGES:\n"
-        for mem in retrieved_memories:
-            source = f"[from: {mem['chat_title']}]" if mem["chat_id"] != chat_id else ""
-            memory_text += f"- {source} {mem['content'][:500]}\n"
-        system_content += memory_text
 
     if system_content.strip():
         messages.append({"role": "system", "content": system_content.strip()})
@@ -592,10 +411,7 @@ def post_generation_tasks(chat_id: str, user_content: str,
     """
     def _run():
         try:
-            # 1. Embed the turn pair
-            embed_and_save_turn(chat_id, user_content, assistant_content, assistant_msg_id)
-
-            # 2. Update summary if messages have fallen out of window
+            # 1. Update summary if messages have fallen out of window
             maybe_update_summary(chat_id)
         except Exception as e:
             print(f"Memory: Post-generation tasks failed: {e}")

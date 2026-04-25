@@ -36,9 +36,7 @@ class ConfigUpdate(BaseModel):
     pdf_text_pages_per_batch: Optional[int] = None
     pdf_image_pages_per_batch: Optional[int] = None
     image_generation_resolution: Optional[str] = None
-    # Memory system
-    memory_top_k: Optional[int] = None
-    memory_max_tokens: Optional[int] = None
+    rolling_window_max_tokens: Optional[int] = None
     summary_max_tokens: Optional[int] = None
 
 
