@@ -14,7 +14,7 @@
     <script src="libs/lucide.min.js"></script>
     <script src="libs/marked.min.js"></script>
     <script src="libs/purify.min.js"></script>
-    
+
     <!-- Math Rendering (Offline KaTeX) -->
     <link href="libs/katex/katex.min.css" rel="stylesheet" />
     <script src="libs/katex/katex.min.js"></script>
@@ -244,21 +244,21 @@
                 <div class="setting-row">
                     <div class="setting-label">
                         <span>Rolling Window Token Budget</span>
-                        <span class="setting-value" id="val-rolling-max-tokens">4096</span>
+                        <span class="setting-value" id="val-rolling-max-tokens">3200</span>
                     </div>
-                    <input type="range" class="setting-slider" id="cfg-rolling-max-tokens" min="0" max="16000" step="100"
-                        value="4096">
-                    <div class="setting-hints"><span>Off</span><span>16000 tokens</span></div>
+                    <input type="range" class="setting-slider" id="cfg-rolling-max-tokens" min="2400" max="16000"
+                        step="100" value="3200">
+                    <div class="setting-hints"><span>2400 tokens</span><span>16000 tokens</span></div>
                 </div>
 
                 <div class="setting-row">
                     <div class="setting-label">
                         <span>Summary Token Budget</span>
-                        <span class="setting-value" id="val-summary-max-tokens">400</span>
+                        <span class="setting-value" id="val-summary-max-tokens">600</span>
                     </div>
-                    <input type="range" class="setting-slider" id="cfg-summary-max-tokens" min="0" max="1000" step="50"
-                        value="400">
-                    <div class="setting-hints"><span>Off</span><span>1000 tokens</span></div>
+                    <input type="range" class="setting-slider" id="cfg-summary-max-tokens" min="400" max="3000"
+                        step="50" value="600">
+                    <div class="setting-hints"><span>400 tokens</span><span>3000 tokens</span></div>
                 </div>
             </div>
 

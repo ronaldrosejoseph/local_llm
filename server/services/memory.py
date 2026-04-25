@@ -80,8 +80,8 @@ def assemble_context(chat_id: str, current_message: str, system_prompt: str,
     gen_headroom = min(max_gen_tokens, int(context_window * 0.5))
     
     memory_cfg = {
-        "rolling_window_max_tokens": cfg.get("rolling_window_max_tokens", 4096),
-        "summary_max_tokens": cfg.get("summary_max_tokens", 400),
+        "rolling_window_max_tokens": cfg.get("rolling_window_max_tokens", 3200),
+        "summary_max_tokens": cfg.get("summary_max_tokens", 600),
     }
 
     # --- Fixed allocations ---
@@ -277,7 +277,8 @@ def maybe_update_summary(chat_id: str):
     gen_headroom = min(max_gen_tokens, int(context_window * 0.75))
 
     # Estimate a rough rolling window budget (conservative — no RAG/web)
-    approx_window_budget = max(0, context_window - gen_headroom - 500)  # 500 for system/summary overhead
+    max_budget = max(0, context_window - gen_headroom - 500)  # 500 for system/summary overhead
+    approx_window_budget = min(max_budget, cfg.get("rolling_window_max_tokens", 3200))
 
     with closing(get_db_connection()) as conn:
         # Get the summary watermark

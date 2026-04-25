@@ -35,6 +35,6 @@ def update_config(data: ConfigUpdate):
     if data.rolling_window_max_tokens is not None:
         cfg["rolling_window_max_tokens"] = max(0, min(16384, int(data.rolling_window_max_tokens)))
     if data.summary_max_tokens is not None:
-        cfg["summary_max_tokens"] = max(0, min(1000, int(data.summary_max_tokens)))
+        cfg["summary_max_tokens"] = max(0, min(3000, int(data.summary_max_tokens)))
     save_config(cfg)
     return cfg

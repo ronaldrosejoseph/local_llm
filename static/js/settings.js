@@ -45,8 +45,8 @@ function applyConfigToUI(cfg) {
     set('cfg-pdf-text-batch', 'val-pdf-text-batch', cfg.pdf_text_pages_per_batch || 50);
     set('cfg-pdf-image-batch', 'val-pdf-image-batch', cfg.pdf_image_pages_per_batch || 5);
     set('cfg-image-res', null, cfg.image_generation_resolution || "720x720");
-    set('cfg-rolling-max-tokens', 'val-rolling-max-tokens', cfg.rolling_window_max_tokens ?? 4096);
-    set('cfg-summary-max-tokens', 'val-summary-max-tokens', cfg.summary_max_tokens ?? 400);
+    set('cfg-rolling-max-tokens', 'val-rolling-max-tokens', cfg.rolling_window_max_tokens ?? 3200);
+    set('cfg-summary-max-tokens', 'val-summary-max-tokens', cfg.summary_max_tokens ?? 600);
 }
 
 function scheduleConfigSave(patch) {
