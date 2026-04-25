@@ -52,6 +52,16 @@ This application transforms your machine into a fully private AI workstation:
 - **Speech-to-Text**: Click the mic icon to dictate physical voice sequences to the LLM.
 - **Text-to-Speech**: AI responses can be spoken aloud intelligently using the integrated macOS `say` command daemon.
 
+### 📐 Professional Math Rendering
+- **KaTeX Support**: Integrated professional LaTeX mathematical typesetting. The system automatically detects and renders complex inline and block-level math formulas (e.g., `$E=mc^2$`) with high-fidelity, offline-first KaTeX libraries.
+
+### 🧠 Advanced Memory & Self-Healing
+- **Dual-Layer Memory System**: 
+  - **Rolling Window**: Verbatim, short-term memory (default ~4000 tokens) that keeps your immediate conversation perfectly coherent and lightning-fast.
+  - **Progressive Summarization**: As messages "fall out" of the rolling window, the LLM automatically condenses them into a long-term "Progressive Summary" that persists indefinitely, ensuring the AI never forgets the core facts of a 100+ message thread.
+- **Crash Recovery (Self-Healing)**: 
+  - If the server crashes (e.g., due to an OOM on a massive model), it will automatically detect the crash on next boot and reset the active model to the lightweight `gemma-4-e2b` safe default. No more getting stuck in a crash loop!
+
 ---
 
 ## 🚀 Getting Started
@@ -80,7 +90,7 @@ Control your FastAPI application running in the background natively:
 # Boot server locally
 ./start.sh
 
-# Complete graceful shutdown
+# Complete graceful shutdown (Deletes lifecycle lock to avoid recovery logic)
 ./stop.sh
 
 # Flush and restart (Useful when changing underlying backend code)
@@ -94,8 +104,9 @@ Control your FastAPI application running in the background natively:
 ## 🛠️ Architecture
 
 - **Backend**: FastAPI, MLX (`mlx_lm`, `mlx_vlm`, `mflux`), PyTorch, Sentence-Transformers
-- **Frontend**: Vanilla HTML/CSS/JS, DOMPurify (XSS Protection), Lucide Icons
+- **Frontend**: Vanilla HTML/CSS/JS, DOMPurify (XSS Protection), Lucide Icons, KaTeX
 - **Storage**: SQLite natively tracking chat IDs, messages, and model registries.
+- **Memory Architecture**: Dual-Layer (Rolling Window + Progressive Summarization)
 - **Default Baseline Architecture**: `mlx-community/gemma-4-e2b-it-4bit`
 
 ---

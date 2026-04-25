@@ -20,6 +20,7 @@ if [ -f "$PID_FILE" ]; then
         kill -9 "$PID" 2>/dev/null
     fi
     rm "$PID_FILE"
+    rm -f ".server_lifecycle"
     echo "Server stopped."
 else
     echo "Server is not running (no $PID_FILE found)."

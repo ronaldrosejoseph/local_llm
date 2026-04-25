@@ -21,6 +21,7 @@ coverage.xml
 *.log
 *.pid
 server.pid
+.server_lifecycle
 
 # OS specific
 .DS_Store

@@ -158,7 +158,7 @@ The chat endpoint uses a two-layer memory system instead of sending the entire c
 - **Progressive Summary** — Older messages that fall out of the rolling window are incrementally summarized by the LLM and stored on the `chats.summary` column. Runs asynchronously post-generation.
 - **Context Assembly** (`assemble_context()`) allocates the model's context window as: system prompt → summary → rolling window → current message, with generation headroom reserved.
 - **Post-Generation Tasks** — After each response, a background thread checks if summarization is needed.
-- Configurable via `config.json`: `memory_max_tokens`, `summary_max_tokens`.
+- Configurable via `config.json`: `rolling_window_max_tokens`, `summary_max_tokens`.
 
 ### Image Generation
 - Uses `mflux` library (FLUX.1 Schnell, 4-bit quantized).

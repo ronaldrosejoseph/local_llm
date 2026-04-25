@@ -25,6 +25,18 @@ app.include_router(documents_router)
 app.include_router(config_router)
 app.include_router(speech_router)
 
+# Server Lifecycle Check (Crash Recovery)
+LIFECYCLE_FILE = ".server_lifecycle"
+
+if os.path.exists(LIFECYCLE_FILE):
+    print(f"Server: {LIFECYCLE_FILE} exists. Previous run may have crashed. Recovering...")
+    from server.db import reset_to_default_model
+    reset_to_default_model()
+
+# Mark as running
+with open(LIFECYCLE_FILE, "w") as f:
+    f.write("running")
+
 # Initial model load at startup
 load_active_model()
 
