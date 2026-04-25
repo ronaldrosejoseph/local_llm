@@ -781,7 +781,7 @@ pre[class*="language-"] {
 /* Table Styling */
 .message-content table {
     display: block;
-    width: 100%;
+    width: fit-content;
     overflow-x: scroll;
     border-collapse: collapse;
     margin: 14px 0;
@@ -821,7 +821,6 @@ pre[class*="language-"] {
     color: var(--accent-color);
     border-bottom: 2px solid var(--border-color);
     border-right: 1px solid var(--border-color);
-    white-space: nowrap;
 }
 
 .message-content th:last-child {
