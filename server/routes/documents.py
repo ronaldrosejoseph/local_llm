@@ -117,8 +117,10 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
                         conn.commit()
 
                     save_documents_to_db(chat_id)
+                    from server.services.rag import build_rag_context
+                    _, rag_meta = build_rag_context(chat_id, "")
                     return {"status": "ok", "chunks": len(img_paths), "total_pages": total_pages,
-                            "filename": file.filename, "vision": True}
+                            "filename": file.filename, "vision": True, "rag_status": rag_meta}
                 else:
                     # No Vision + Scanned PDF = Empty RAG (existing fallback)
                     print("No digital text and no Vision model active. Extracting minimal text.")
@@ -177,9 +179,11 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
             conn.commit()
 
         save_documents_to_db(chat_id)
+        from server.services.rag import build_rag_context
+        _, rag_meta = build_rag_context(chat_id, "")
 
         return {"status": "ok", "chunks": len(chunks), "filename": file.filename,
-                "rag_active": emb_model is not None}
+                "rag_active": emb_model is not None, "rag_status": rag_meta}
     except Exception as e:
         print(f"Error uploading doc: {e}")
         raise HTTPException(status_code=500, detail=str(e))

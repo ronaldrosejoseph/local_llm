@@ -87,6 +87,8 @@ def init_db():
     add_column_if_missing("chats", "summary", "TEXT")                # Progressive summary of older turns
     add_column_if_missing("chats", "summary_through_msg_id", "INTEGER DEFAULT 0")  # Watermark: last summarized msg id
     add_column_if_missing("chats", "rag_offset", "INTEGER DEFAULT 0")  # Persistent batch pagination
+    add_column_if_missing("chats", "rag_search_mode", "BOOLEAN DEFAULT 0")  # 0=Page Order, 1=Similarity Search
+    add_column_if_missing("chats", "rag_search_query", "TEXT")  # The topic string for similarity search
     
     # Seed default model if no models exist
     cursor.execute("SELECT COUNT(*) FROM models")

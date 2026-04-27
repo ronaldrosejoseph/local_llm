@@ -150,10 +150,10 @@
 - Documents are chunked on upload (800 chars for text, full file for code).
 - Embeddings computed via `sentence-transformers/all-MiniLM-L6-v2`.
 - Persisted to SQLite `documents` table (embeddings as numpy BLOBs) and lazy-loaded into `state.document_store` memory on first chat access.
-- At query time, cosine similarity ranks chunks; top-N are injected into the prompt.
+- At query time, chunks are injected in sequential page order (Default) or filtered by similarity to a user-defined topic (Search Mode).
 - Pagination via `state.rag_offsets` dict and persisted `chats.rag_offset` DB column.
-- UI Control: Interactive slider in the chat header allows manual scrubbing through document batches.
-- Persistence: Reading position is saved to the DB and restored when switching chats or restarting.
+- UI Control: Interactive slider in the chat header for manual scrubbing, plus a Search Toggle (🔍) to filter the document by topic.
+- Persistence: Reading position, search mode, and search topic are saved to the `chats` table and restored on load.
 - Code files (detected by extension) are included in full rather than chunked.
 
 ### Dual-Layer Memory System
@@ -205,7 +205,8 @@ say_processes = set()      # Tracked subprocess.Popen objects for TTS
 ```sql
 -- Chat conversations
 chats (id TEXT PK, title TEXT, created_at TIMESTAMP, updated_at TIMESTAMP, system_prompt TEXT,
-       summary TEXT, summary_through_msg_id INTEGER, rag_offset INTEGER)  -- Progressive memory summary + RAG persistence
+       summary TEXT, summary_through_msg_id INTEGER, rag_offset INTEGER,
+       rag_search_mode BOOLEAN, rag_search_query TEXT)  -- Progressive memory summary + RAG persistence + Search Mode
 
 -- Messages within chats
 messages (id INTEGER PK, chat_id TEXT FK, role TEXT, content TEXT, timestamp TIMESTAMP,

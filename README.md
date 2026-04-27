@@ -21,11 +21,13 @@ This application transforms your machine into a fully private AI workstation:
   - The backend intercepts the prompt, scrapes real-time DuckDuckGo results completely free of API bounds, and invisibly feeds them to your LLM for pinpoint accuracy.
 - **Document Chat & RAG (Retrieval-Augmented Generation)**: 
   - Click the **Paperclip Icon** to upload `.txt` or `.pdf` files. 
-  - An ultra-fast local embedding pipeline chunks and indexes your documents into memory. Subsequent messages will dynamically grab the most relevant context vectors using Cosine Similarity natively over CPU/MPS.
-- **📚 Large Document Navigation (RAG Pagination)**:
+  - An ultra-fast local pipeline chunks and indexes your documents. Subsequent messages inject the document in sequential page order, allowing you to browse through large PDFs naturally using the context slider.
+- **📚 Large Document Navigation & Dual-Mode RAG**:
   - For documents longer than 50 chunks, the system uses a **sliding window** to prevent the model from becoming overwhelmed.
-  - **Context Slider**: An interactive UI slider in the chat header allows you to scrub through the batches of the document. The window displays your current position (e.g., `Context: 51-100 / 450`).
-  - **Persistence**: Your position in the document is permanently saved to the database. You can change conversations or restart the server, and it will remember your exact reading offset when you return.
+  - **Sequential Mode (Default)**: Browse the document in its actual page order. Ideal for broad summaries or reading through a file naturally.
+  - **Similarity Search Mode**: Click the **Search Icon (🔍)** next to the slider to enter a specific topic (e.g., "financial risks"). The system will filter the entire document to show *only* the most relevant chunks in the slider.
+  - **Context Slider**: An interactive UI slider in the chat header allows you to scrub through the batches of the document.
+  - **Persistence**: Your reading position, search mode, and search topic are permanently saved to the database per-chat.
   - **Commands**: You can manually slide the UI bar to change the batch context, or type **`/next`** to advance the window forward.
 
 ### 📸 Vision & Image Generation

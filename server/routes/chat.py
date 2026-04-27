@@ -116,29 +116,38 @@ def generate_title(chat_id: str):
 
 @router.get("/api/chats/{chat_id}/rag-status")
 def get_rag_status(chat_id: str):
+    from server.services.rag import build_rag_context
+    # Fetch status directly from build_rag_context to ensure 'total' reflects the current mode/filter
+    res = build_rag_context(chat_id, "")
+    
     with closing(get_db_connection()) as conn:
-        row = conn.execute("SELECT rag_offset FROM chats WHERE id = ?", (chat_id,)).fetchone()
-        # Fallback to 0 if column is missing or value is null
-        offset = 0
-        if row and "rag_offset" in row.keys() and row["rag_offset"] is not None:
-            offset = row["rag_offset"]
-            
-        total_chunks = conn.execute("SELECT COUNT(*) FROM documents WHERE chat_id = ? AND type = 'text'", (chat_id,)).fetchone()[0]
+        row = conn.execute("SELECT rag_search_mode, rag_search_query FROM chats WHERE id = ?", (chat_id,)).fetchone()
+        search_mode = bool(row["rag_search_mode"]) if row else False
+        search_query = row["rag_search_query"] if row else ""
         
-    state.rag_offsets[chat_id] = offset
-    limit = load_config().get("pdf_text_pages_per_batch", 50)
-    return {"offset": offset, "total": total_chunks, "limit": limit}
+    if res:
+        doc_context, rag_meta = res
+        if rag_meta:
+            rag_meta["search_mode"] = search_mode
+            rag_meta["search_query"] = search_query
+            return rag_meta
+    
+    return {"offset": 0, "total": 0, "limit": 50, "search_mode": search_mode, "search_query": search_query}
 
 @router.put("/api/chats/{chat_id}/rag-status")
 def update_rag_status(chat_id: str, payload: dict):
-    offset = int(payload.get("offset", 0))
     with closing(get_db_connection()) as conn:
         try:
-            conn.execute("UPDATE chats SET rag_offset = ? WHERE id = ?", (offset, chat_id))
+            if "offset" in payload:
+                conn.execute("UPDATE chats SET rag_offset = ? WHERE id = ?", (int(payload["offset"]), chat_id))
+                state.rag_offsets[chat_id] = int(payload["offset"])
+            if "search_mode" in payload:
+                conn.execute("UPDATE chats SET rag_search_mode = ? WHERE id = ?", (1 if payload["search_mode"] else 0, chat_id))
+            if "search_query" in payload:
+                conn.execute("UPDATE chats SET rag_search_query = ? WHERE id = ?", (payload["search_query"], chat_id))
             conn.commit()
         except Exception as e:
-            print(f"Could not save rag_offset to DB: {e}")
-    state.rag_offsets[chat_id] = offset
+            print(f"Could not update rag_status in DB: {e}")
     return {"status": "success"}
 
 @router.delete("/api/chats/{chat_id}")
@@ -234,11 +243,7 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                      (chat_id, "user", chat_data.message))
         conn.commit()
 
-    # 3. Lazy-load RAG documents from DB if not already in memory
-    if chat_id not in state.document_store:
-        load_documents_from_db(chat_id)
-
-    # 4. Load system prompt
+    # 3. Load system prompt
     system_prompt = ""
     with closing(get_db_connection()) as conn:
         sp_row = conn.execute("SELECT system_prompt FROM chats WHERE id = ?", (chat_id,)).fetchone()

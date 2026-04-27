@@ -54,6 +54,12 @@ export function initDocumentUpload() {
 
                 // 3. Refresh chat history in sidebar
                 loadChatHistory();
+
+                // 4. Update RAG Slider immediately
+                if (data.rag_status) {
+                    const chatModule = await import('./chat.js');
+                    chatModule.updateRagStatusUI(data.rag_status);
+                }
             }
         } catch (err) {
             elements.attachmentContainer.style.display = 'none';

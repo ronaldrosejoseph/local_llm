@@ -272,17 +272,27 @@ export function updateRagStatusUI(rs) {
     const container = document.getElementById('rag-status-container');
     const textEl = document.getElementById('rag-status-text');
     const slider = document.getElementById('rag-slider');
+    const toggle = document.getElementById('rag-search-toggle');
     
     if (container && textEl && slider) {
-        if (rs.total > rs.limit) {
+        if (rs.total > 0) {
             slider.min = 0;
             slider.max = Math.max(0, rs.total - 1);
             slider.step = rs.limit;
             slider.value = rs.offset;
             
             const end = Math.min(rs.offset + rs.limit, rs.total);
-            textEl.textContent = `Context: ${rs.offset + 1}-${end} / ${rs.total}`;
+            const prefix = rs.search_mode ? `Search "${rs.search_query}": ` : "Context: ";
+            textEl.textContent = `${prefix}${rs.offset + 1}-${end} / ${rs.total}`;
             container.style.display = 'flex';
+            
+            if (toggle) {
+                toggle.style.background = rs.search_mode ? 'rgba(85,170,255,0.2)' : 'none';
+                toggle.style.border = rs.search_mode ? '1px solid rgba(85,170,255,0.4)' : 'none';
+                toggle.innerHTML = `<i data-lucide="${rs.search_mode ? 'search-x' : 'search'}" style="width: 14px; height: 14px;"></i>`;
+                lucide.createIcons({ elements: [toggle.querySelector('[data-lucide]')] });
+                toggle.title = rs.search_mode ? "Clear Search" : "Toggle Similarity Search";
+            }
         } else {
             container.style.display = 'none';
         }

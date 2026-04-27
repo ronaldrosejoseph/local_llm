@@ -99,6 +99,9 @@ def build_rag_context(chat_id: str, query_content: str):
     doc_context = ""
     rag_meta = None
 
+    if chat_id not in state.document_store:
+        load_documents_from_db(chat_id)
+
     if chat_id not in state.document_store or not state.document_store[chat_id]:
         return doc_context, rag_meta
 
@@ -118,16 +121,34 @@ def build_rag_context(chat_id: str, query_content: str):
 
         # 2. Add Text Context (Semantic RAG search for large documents/PDFs)
         if emb_model and text_docs:
-            query = query_content.replace("/web", "").strip()
-            query_emb = emb_model.encode([query])[0]
+            # Check DB for search mode and stored topic
+            search_mode = False
+            search_topic = ""
+            with closing(get_db_connection()) as conn:
+                row = conn.execute("SELECT rag_search_mode, rag_search_query FROM chats WHERE id = ?", (chat_id,)).fetchone()
+                if row:
+                    search_mode = bool(row["rag_search_mode"])
+                    search_topic = row["rag_search_query"] or ""
 
-            doc_embs = [d['emb'] for d in text_docs]
-            q_norm = query_emb / np.linalg.norm(query_emb)
-            d_norms = doc_embs / np.linalg.norm(doc_embs, axis=1)[:, np.newaxis]
-            similarities = np.dot(d_norms, q_norm)
-
-            # Sorting all available text chunks by descending similarity
-            all_indices = np.argsort(similarities)[::-1]
+            if search_mode and search_topic:
+                # Similarity Mode: Filter and Rank by the specific search topic
+                query_emb = emb_model.encode([search_topic])[0]
+                doc_embs = [d['emb'] for d in text_docs]
+                q_norm = query_emb / np.linalg.norm(query_emb)
+                d_norms = doc_embs / np.linalg.norm(doc_embs, axis=1)[:, np.newaxis]
+                similarities = np.dot(d_norms, q_norm)
+                
+                # Use a similarity threshold (0.3) to filter chunks, then sort by relevance
+                filtered_indices = np.where(similarities > 0.3)[0]
+                if len(filtered_indices) > 0:
+                    all_indices = filtered_indices[np.argsort(similarities[filtered_indices])[::-1]]
+                else:
+                    # Fallback to top 10 if nothing passes threshold to avoid empty context
+                    all_indices = np.argsort(similarities)[::-1][:10]
+            else:
+                # Page Order Mode (Default): Simply use sequential indices
+                all_indices = np.arange(len(text_docs))
+            
             total_chunks = len(all_indices)
 
             # Windowing Logic for Text RAG
@@ -137,7 +158,14 @@ def build_rag_context(chat_id: str, query_content: str):
 
             limit = load_config().get("pdf_text_pages_per_batch", 50)
             top_indices = all_indices[offset: offset + limit]
-            rag_meta = {"offset": offset, "total": total_chunks, "limit": limit, "is_vision": False}
+            rag_meta = {
+                "offset": offset, 
+                "total": total_chunks, 
+                "limit": limit, 
+                "is_vision": False,
+                "search_mode": search_mode,
+                "search_query": search_topic
+            }
 
             doc_context += f"### Relevant Document Snippets (Chunks {offset + 1} to {min(offset + limit, total_chunks)} of {total_chunks}) ###\n"
             if offset > 0:
@@ -162,6 +190,9 @@ def handle_vision_pdf_pagination(chat_id: str):
 
     Returns rag_meta dict if vision PDF is active, otherwise None.
     """
+    if chat_id not in state.document_store:
+        load_documents_from_db(chat_id)
+
     vision_pdf = None
     if chat_id in state.document_store:
         for item in state.document_store[chat_id]:
@@ -192,7 +223,14 @@ def handle_vision_pdf_pagination(chat_id: str):
             print(f"Vision background extraction error: {e}")
 
     # Limit window for UI and Model
-    return {"offset": offset, "total": total_pages, "limit": limit, "is_vision": True}
+    return {
+        "offset": offset, 
+        "total": total_pages, 
+        "limit": limit, 
+        "is_vision": True,
+        "search_mode": False, 
+        "search_query": ""
+    }
 
 
 def save_documents_to_db(chat_id: str):

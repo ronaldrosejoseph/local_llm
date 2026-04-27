@@ -131,7 +131,44 @@ if (ragSlider) {
     });
 }
 
-// Initialize modules that need setup
+// RAG Search Toggle
+const ragSearchToggle = document.getElementById('rag-search-toggle');
+if (ragSearchToggle) {
+    ragSearchToggle.addEventListener('click', async () => {
+        if (!state.currentChatId) return;
+        
+        try {
+            // Get current status to see if we are turning it on or off
+            const statusRes = await fetch(`/api/chats/${state.currentChatId}/rag-status`);
+            const currentStatus = await statusRes.json();
+            
+            let payload = {};
+            if (!currentStatus.search_mode) {
+                // Turning it ON
+                const topic = prompt("Enter a topic or keyword to search for similarity across the document:");
+                if (!topic) return; // Cancelled
+                payload = { search_mode: true, search_query: topic, offset: 0 };
+            } else {
+                // Turning it OFF
+                payload = { search_mode: false, offset: 0 };
+            }
+            
+            await fetch(`/api/chats/${state.currentChatId}/rag-status`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            
+            // Refresh UI
+            const newStatusRes = await fetch(`/api/chats/${state.currentChatId}/rag-status`);
+            const newStatus = await newStatusRes.json();
+            import('./chat.js').then(m => m.updateRagStatusUI(newStatus));
+            
+        } catch (err) {
+            console.error("Failed to toggle RAG search mode", err);
+        }
+    });
+}
 initScrollTracking();
 initConfigSliders();
 initDocumentUpload();
