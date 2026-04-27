@@ -33,6 +33,7 @@ Thumbs.db
 database/*.db
 database/*.db-wal
 database/*.db-shm
+.init_db.hash
 
 # IDEs
 .vscode/

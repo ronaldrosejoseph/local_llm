@@ -69,15 +69,33 @@ if [ -f "requirements.txt" ]; then
     fi
 fi
 
-# 3. Initialize database if missing
+# 3. Initialize database and handle schema updates
 if [ ! -d "database" ]; then
     echo "Creating database directory..."
     mkdir -p database
 fi
 
+HASH_FILE=".init_db.hash"
+# Use md5 on macOS to check if init_db.py has changed
+if command -v md5 >/dev/null 2>&1; then
+    CURRENT_HASH=$(md5 -q init_db.py)
+else
+    # Fallback for systems with md5sum
+    CURRENT_HASH=$(md5sum init_db.py | awk '{ print $1 }')
+fi
+
+NEED_INIT=false
 if [ ! -f "database/chats.db" ]; then
-    echo "Initializing database..."
+    echo "Database missing. Initializing..."
+    NEED_INIT=true
+elif [ ! -f "$HASH_FILE" ] || [ "$CURRENT_HASH" != "$(cat "$HASH_FILE")" ]; then
+    echo "Changes detected in init_db.py. Running schema updates..."
+    NEED_INIT=true
+fi
+
+if [ "$NEED_INIT" = true ]; then
     ./venv/bin/python3 init_db.py
+    echo "$CURRENT_HASH" > "$HASH_FILE"
 fi
 
 nohup ./venv/bin/python3 server.py > "$LOG_FILE" 2>&1 &
