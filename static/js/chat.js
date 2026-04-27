@@ -36,6 +36,14 @@ export async function sendMessage(text = null) {
     elements.sendBtn.style.display = 'none';
     elements.stopBtn.style.display = 'flex';
 
+    // Buttons to lock while generating
+    const lockButtons = [
+        elements.modelSelect,
+        elements.chatInput,
+        elements.attachBtn,
+        elements.voiceBtn
+    ];
+
     let requestChatId = state.currentChatId;
     state.abortController = new AbortController();
 
@@ -50,7 +58,11 @@ export async function sendMessage(text = null) {
         item.style.pointerEvents = 'none';
         item.style.opacity = '0.5';
     });
-    elements.modelSelect.disabled = true;
+    lockButtons.forEach(element => {
+        if (element && typeof element.disabled !== 'undefined') {
+            element.disabled = true;
+        }
+    });
 
     try {
         const ragStatusEl = document.getElementById('rag-status');
@@ -206,7 +218,11 @@ export async function sendMessage(text = null) {
             item.style.pointerEvents = 'auto';
             item.style.opacity = '1';
         });
-        elements.modelSelect.disabled = false;
+        lockButtons.forEach(element => {
+            if (element && typeof element.disabled !== 'undefined') {
+                element.disabled = false;
+            }
+        });
 
         // Auto-generate title if it's a new conversation
         if (elements.currentChatTitle.textContent === "New Conversation" && state.currentChatId === requestChatId && fullContent.trim().length > 0) {
@@ -273,19 +289,19 @@ export function updateRagStatusUI(rs) {
     const textEl = document.getElementById('rag-status-text');
     const slider = document.getElementById('rag-slider');
     const toggle = document.getElementById('rag-search-toggle');
-    
+
     if (container && textEl && slider) {
         if (rs.total > 0) {
             slider.min = 0;
             slider.max = Math.max(0, rs.total - 1);
             slider.step = rs.limit;
             slider.value = rs.offset;
-            
+
             const end = Math.min(rs.offset + rs.limit, rs.total);
             const prefix = rs.search_mode ? `Search "${rs.search_query}": ` : "Context: ";
             textEl.textContent = `${prefix}${rs.offset + 1}-${end} / ${rs.total}`;
             container.style.display = 'flex';
-            
+
             if (toggle) {
                 toggle.style.background = rs.search_mode ? 'rgba(85,170,255,0.2)' : 'none';
                 toggle.style.border = rs.search_mode ? '1px solid rgba(85,170,255,0.4)' : 'none';

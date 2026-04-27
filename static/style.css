@@ -555,7 +555,7 @@ html {
 }
 
 .message {
-    max-width: 85%;
+    max-width: 95%;
     display: flex;
     flex-direction: column;
 }
@@ -1439,7 +1439,8 @@ textarea {
 
     .model-info {
         flex: 1;
-        justify-content: center;
+        flex-wrap: wrap;
+        justify-content: flex-start;
         margin-right: 32px;
     }
 }
