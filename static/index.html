@@ -66,8 +66,10 @@
                 <div class="model-info">
                     <span class="model-badge">LLM</span>
                     <span id="current-chat-title">New Conversation</span>
-                    <span id="rag-status"
-                        style="display:none; margin-left: 10px; background: rgba(85,170,255,0.1); border: 1px solid rgba(85,170,255,0.3); color: var(--accent-color); padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;"></span>
+                    <div id="rag-status-container" style="display:none; margin-left: 10px; align-items: center; background: rgba(85,170,255,0.05); border: 1px solid rgba(85,170,255,0.2); padding: 2px 8px; border-radius: 6px; gap: 8px;">
+                        <span id="rag-status-text" style="color: var(--accent-color); font-size: 11px; font-weight: 600;"></span>
+                        <input type="range" id="rag-slider" min="0" max="0" step="50" value="0" style="width: 80px; height: 4px; accent-color: var(--accent-color); cursor: pointer;">
+                    </div>
                 </div>
                 <button class="system-prompt-toggle" id="system-prompt-toggle" title="System Prompt">
                     <i data-lucide="bot"></i>

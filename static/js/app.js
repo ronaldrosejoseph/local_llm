@@ -105,6 +105,32 @@ elements.messagesContainer.addEventListener('click', (e) => {
     if (codeEl) copyCode(codeEl.id);
 });
 
+// RAG Slider
+const ragSlider = document.getElementById('rag-slider');
+if (ragSlider) {
+    ragSlider.addEventListener('input', async (e) => {
+        const offset = parseInt(e.target.value);
+        const limit = parseInt(e.target.step || 50);
+        const total = parseInt(e.target.max) + 1; // max was set to total - 1
+        const end = Math.min(offset + limit, total);
+        
+        document.getElementById('rag-status-text').textContent = `Context: ${offset + 1}-${end} / ${total}`;
+        
+        if (state.currentChatId) {
+            try {
+                // Import API_URL from state directly or use relative
+                await fetch(`/api/chats/${state.currentChatId}/rag-status`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ offset: offset })
+                });
+            } catch (err) {
+                console.error("Failed to update RAG offset", err);
+            }
+        }
+    });
+}
+
 // Initialize modules that need setup
 initScrollTracking();
 initConfigSliders();

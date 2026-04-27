@@ -24,10 +24,9 @@ This application transforms your machine into a fully private AI workstation:
   - An ultra-fast local embedding pipeline chunks and indexes your documents into memory. Subsequent messages will dynamically grab the most relevant context vectors using Cosine Similarity natively over CPU/MPS.
 - **📚 Large Document Navigation (RAG Pagination)**:
   - For documents longer than 50 chunks, the system uses a **sliding window** to prevent the model from becoming overwhelmed.
-  - **Context Status**: A live badge in the chat header (e.g., `Context: 1-50 / 450`) shows your current "view" of the document.
-  - **Commands**:
-    - Type **`/next`** or say **"next 50 chunks"** to slide the window forward and explore deeper into the document.
-    - **Auto-Reset**: Any new, specific question will automatically reset the window to the **top 50 most relevant** chunks for that query.
+  - **Context Slider**: An interactive UI slider in the chat header allows you to scrub through the batches of the document. The window displays your current position (e.g., `Context: 51-100 / 450`).
+  - **Persistence**: Your position in the document is permanently saved to the database. You can change conversations or restart the server, and it will remember your exact reading offset when you return.
+  - **Commands**: You can manually slide the UI bar to change the batch context, or type **`/next`** to advance the window forward.
 
 ### 📸 Vision & Image Generation
 - **Text-To-Image Generation (`/imagine`)**: 

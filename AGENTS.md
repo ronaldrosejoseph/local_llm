@@ -112,6 +112,8 @@
 | `PUT` | `/api/chats/{chat_id}/system-prompt` | Update the system prompt for a chat |
 | `POST` | `/api/chats/{chat_id}/generate-title`| Auto-generates a 3-5 word title using the LLM for a new conversation |
 | `DELETE` | `/api/chats/{chat_id}` | Delete a chat (including all messages, docs, and physical assets) |
+| `GET` | `/api/chats/{chat_id}/rag-status` | Get RAG pagination offset and total chunks |
+| `PUT` | `/api/chats/{chat_id}/rag-status` | Update persistent RAG pagination offset |
 | `POST` | `/api/upload-document` | Upload file for RAG (multipart form) |
 | `GET` | `/api/models` | List models in library |
 | `POST` | `/api/models` | Add model (verify + download), returns SSE progress |
@@ -142,14 +144,16 @@
 - `/web <query>` — Scrapes DuckDuckGo and injects results as context before the LLM prompt.
 - `/imagine <prompt>` — Bypasses LLM, boots FLUX.1 Schnell for text-to-image generation.
 - `/edit <prompt>` — Image-to-image editing with FLUX using the most recently uploaded image.
-- `/next` — Advances the RAG pagination window to show the next batch of document chunks.
+- `/next` — Advances the RAG pagination window to show the next batch (syncs with UI slider).
 
 ### RAG (Retrieval-Augmented Generation)
 - Documents are chunked on upload (800 chars for text, full file for code).
 - Embeddings computed via `sentence-transformers/all-MiniLM-L6-v2`.
 - Persisted to SQLite `documents` table (embeddings as numpy BLOBs) and lazy-loaded into `state.document_store` memory on first chat access.
 - At query time, cosine similarity ranks chunks; top-N are injected into the prompt.
-- Pagination via `state.rag_offsets` dict — controlled by `/next` command.
+- Pagination via `state.rag_offsets` dict and persisted `chats.rag_offset` DB column.
+- UI Control: Interactive slider in the chat header allows manual scrubbing through document batches.
+- Persistence: Reading position is saved to the DB and restored when switching chats or restarting.
 - Code files (detected by extension) are included in full rather than chunked.
 
 ### Dual-Layer Memory System
@@ -201,7 +205,7 @@ say_processes = set()      # Tracked subprocess.Popen objects for TTS
 ```sql
 -- Chat conversations
 chats (id TEXT PK, title TEXT, created_at TIMESTAMP, updated_at TIMESTAMP, system_prompt TEXT,
-       summary TEXT, summary_through_msg_id INTEGER)  -- Progressive memory summary
+       summary TEXT, summary_through_msg_id INTEGER, rag_offset INTEGER)  -- Progressive memory summary + RAG persistence
 
 -- Messages within chats
 messages (id INTEGER PK, chat_id TEXT FK, role TEXT, content TEXT, timestamp TIMESTAMP,

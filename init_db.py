@@ -86,6 +86,7 @@ def init_db():
     # --- Memory system columns ---
     add_column_if_missing("chats", "summary", "TEXT")                # Progressive summary of older turns
     add_column_if_missing("chats", "summary_through_msg_id", "INTEGER DEFAULT 0")  # Watermark: last summarized msg id
+    add_column_if_missing("chats", "rag_offset", "INTEGER DEFAULT 0")  # Persistent batch pagination
     
     # Seed default model if no models exist
     cursor.execute("SELECT COUNT(*) FROM models")

@@ -114,6 +114,33 @@ def generate_title(chat_id: str):
     finally:
         state.generation_lock.release()
 
+@router.get("/api/chats/{chat_id}/rag-status")
+def get_rag_status(chat_id: str):
+    with closing(get_db_connection()) as conn:
+        row = conn.execute("SELECT rag_offset FROM chats WHERE id = ?", (chat_id,)).fetchone()
+        # Fallback to 0 if column is missing or value is null
+        offset = 0
+        if row and "rag_offset" in row.keys() and row["rag_offset"] is not None:
+            offset = row["rag_offset"]
+            
+        total_chunks = conn.execute("SELECT COUNT(*) FROM documents WHERE chat_id = ? AND type = 'text'", (chat_id,)).fetchone()[0]
+        
+    state.rag_offsets[chat_id] = offset
+    limit = load_config().get("pdf_text_pages_per_batch", 50)
+    return {"offset": offset, "total": total_chunks, "limit": limit}
+
+@router.put("/api/chats/{chat_id}/rag-status")
+def update_rag_status(chat_id: str, payload: dict):
+    offset = int(payload.get("offset", 0))
+    with closing(get_db_connection()) as conn:
+        try:
+            conn.execute("UPDATE chats SET rag_offset = ? WHERE id = ?", (offset, chat_id))
+            conn.commit()
+        except Exception as e:
+            print(f"Could not save rag_offset to DB: {e}")
+    state.rag_offsets[chat_id] = offset
+    return {"status": "success"}
+
 @router.delete("/api/chats/{chat_id}")
 def delete_chat(chat_id: str):
     # 1. Gather all file paths linked to this chat before deleting records (due to CASCADE)
@@ -237,11 +264,6 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
 
         state.rag_offsets[chat_id] = state.rag_offsets.get(chat_id, 0) + increment
         print(f"Pagination triggered for {chat_id}: New offset = {state.rag_offsets[chat_id]}")
-    else:
-        # Reset pagination for any new specific question to keep relevance high
-        if chat_id in state.rag_offsets:
-            print(f"New query detected, resetting RAG offset for {chat_id}.")
-            state.rag_offsets[chat_id] = 0
 
     # --- Image Generation: /imagine ---
     if message_content.strip().startswith("/imagine"):

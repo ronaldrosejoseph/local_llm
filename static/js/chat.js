@@ -87,17 +87,7 @@ export async function sendMessage(text = null) {
                         const data = JSON.parse(dataStr);
 
                         if (data.rag_status) {
-                            const rs = data.rag_status;
-                            const el = document.getElementById('rag-status');
-                            if (el) {
-                                if (rs.total > rs.limit) {
-                                    const end = Math.min(rs.offset + rs.limit, rs.total);
-                                    el.textContent = `Context: ${rs.offset + 1}-${end} / ${rs.total}`;
-                                    el.style.display = 'inline-block';
-                                } else {
-                                    el.style.display = 'none';
-                                }
-                            }
+                            updateRagStatusUI(data.rag_status);
                         }
 
                         // Image model badge updates (during /imagine and /edit)
@@ -276,4 +266,25 @@ export function appendTypingIndicator() {
     `;
     elements.messagesContainer.appendChild(div);
     return div;
+}
+
+export function updateRagStatusUI(rs) {
+    const container = document.getElementById('rag-status-container');
+    const textEl = document.getElementById('rag-status-text');
+    const slider = document.getElementById('rag-slider');
+    
+    if (container && textEl && slider) {
+        if (rs.total > rs.limit) {
+            slider.min = 0;
+            slider.max = Math.max(0, rs.total - 1);
+            slider.step = rs.limit;
+            slider.value = rs.offset;
+            
+            const end = Math.min(rs.offset + rs.limit, rs.total);
+            textEl.textContent = `Context: ${rs.offset + 1}-${end} / ${rs.total}`;
+            container.style.display = 'flex';
+        } else {
+            container.style.display = 'none';
+        }
+    }
 }

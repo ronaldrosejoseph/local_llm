@@ -77,9 +77,13 @@ export async function loadChat(chatId, title) {
             appendMessage(msg.role, msg.content);
         });
 
-        // Hide RAG info on load
-        const ragStatus = document.getElementById('rag-status');
-        if (ragStatus) ragStatus.style.display = 'none';
+        // Load RAG status
+        fetch(`${API_URL}/api/chats/${chatId}/rag-status`)
+            .then(res => res.json())
+            .then(data => {
+                import('./chat.js').then(module => module.updateRagStatusUI(data));
+            })
+            .catch(e => console.error("Could not load rag status", e));
 
         // Load system prompt
         const sysPromptModule = await import('./system_prompt.js');
@@ -103,8 +107,8 @@ export async function startNewChat() {
     elements.fileUpload.value = '';
 
     // Reset RAG badge
-    const ragStatus = document.getElementById('rag-status');
-    if (ragStatus) ragStatus.style.display = 'none';
+    const ragContainer = document.getElementById('rag-status-container');
+    if (ragContainer) ragContainer.style.display = 'none';
 
     // Clear system prompt
     import('./system_prompt.js').then(module => module.loadSystemPrompt(null));
