@@ -4,6 +4,17 @@ A premium, fast, and local LLM chat interface inspired by ChatGPT, heavily optim
 
 Run massive open-source models completely offline while leveraging premium capabilities like Live Web Search, Document Retrieval (RAG), and Image Generation—all processed securely natively on your Mac.
 
+## ✨ Feature Showcase
+
+| **AI Chatting & Titles** | **Model Settings & Personas** |
+|:---:|:---:|
+| ![Chat Interface](./assets/chat_interface.gif) | ![Settings & Persona](./assets/settings_persona.gif) |
+| *Sleek dark-mode interface with auto-generated chat titles and code highlighting.* | *Granular control over generation parameters and custom system personas.* |
+
+### 📚 Advanced RAG Navigation
+![RAG Search](./assets/rag_search.gif)
+*Navigate massive PDFs with a batch slider or use **Similarity Search** to filter the document context for specific topics (e.g., searching "Paying Mortgage Early" in a financial guide).*
+
 ---
 
 ## 🌟 Capabilities Matrix
