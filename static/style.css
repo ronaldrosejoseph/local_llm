@@ -1018,13 +1018,14 @@ pre[class*="language-"] {
 /* Settings sections */
 .settings-section {
     border-top: 1px solid var(--border-color);
-    padding-top: 20px;
-    margin-top: 20px;
+    padding-top: 24px;
+    margin-top: 24px;
+    overflow: auto;
 }
 
 .settings-section:first-of-type {
     border-top: none;
-    padding-top: 0;
+    padding-top: 15px;
     margin-top: 0;
 }
 
@@ -1059,11 +1060,11 @@ pre[class*="language-"] {
 
 .setting-label {
     display: flex;
-    justify-content: space-between;
     align-items: center;
     margin-bottom: 8px;
     font-size: 13px;
     color: var(--text-color);
+    position: relative;
 }
 
 .setting-value {
@@ -1072,6 +1073,7 @@ pre[class*="language-"] {
     font-size: 13px;
     min-width: 44px;
     text-align: right;
+    margin-left: auto;
 }
 
 .setting-hints {
@@ -1550,4 +1552,59 @@ pre[class*="language-"] {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.9em;
     color: #ff79c6;
+}
+
+/* --- Settings Tooltips --- */
+.setting-info-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--text-muted);
+    cursor: none;
+    margin-left: 6px;
+    transition: color 0.2s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.setting-info-icon:hover {
+    color: var(--accent-color);
+}
+
+[data-tooltip] {
+    display: inline-flex;
+    align-items: center;
+}
+
+[data-tooltip]::before {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: 5%;
+    right: 5%;
+    top: -50px;
+    padding: 12px;
+    background: rgba(30, 34, 45, 0.98);
+    backdrop-filter: blur(15px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.5;
+    border-radius: 10px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+    z-index: 10000;
+    pointer-events: none;
+    opacity: 0;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    text-align: center;
+    white-space: normal;
+}
+
+[data-tooltip]:hover::before {
+    opacity: 1;
+    transform: translateY(-5px);
+}
+
+[data-tooltip]::after {
+    display: none;
 }

@@ -171,6 +171,10 @@
                 <div class="setting-row">
                     <div class="setting-label">
                         <span>Max Tokens</span>
+                        <div class="setting-info-icon"
+                            data-tooltip="Maximum length of the assistant's response. Higher values allow longer answers but may take more time.">
+                            <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                        </div>
                         <span class="setting-value" id="val-max-tokens">8192</span>
                     </div>
                     <input type="range" class="setting-slider" id="cfg-max-tokens" min="256" max="131072" step="256"
@@ -181,6 +185,10 @@
                 <div class="setting-row">
                     <div class="setting-label">
                         <span>Temperature</span>
+                        <div class="setting-info-icon"
+                            data-tooltip="Controls creativity. 0.1 is focused and deterministic; 0.8+ is more creative and random.">
+                            <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                        </div>
                         <span class="setting-value" id="val-temperature">0.3</span>
                     </div>
                     <input type="range" class="setting-slider" id="cfg-temperature" min="0" max="2" step="0.05"
@@ -191,6 +199,10 @@
                 <div class="setting-row">
                     <div class="setting-label">
                         <span>Top P</span>
+                        <div class="setting-info-icon"
+                            data-tooltip="Nucleus sampling: only considers tokens with a cumulative probability of P. Helps maintain coherence.">
+                            <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                        </div>
                         <span class="setting-value" id="val-top-p">0.9</span>
                     </div>
                     <input type="range" class="setting-slider" id="cfg-top-p" min="0" max="1" step="0.05" value="0.9">
@@ -200,6 +212,10 @@
                 <div class="setting-row">
                     <div class="setting-label">
                         <span>Repetition Penalty</span>
+                        <div class="setting-info-icon"
+                            data-tooltip="Discourages the model from repeating the same phrases or words in its output.">
+                            <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                        </div>
                         <span class="setting-value" id="val-rep-penalty">1.1</span>
                     </div>
                     <input type="range" class="setting-slider" id="cfg-rep-penalty" min="1" max="1.5" step="0.05"
@@ -215,6 +231,10 @@
                 <div class="setting-row">
                     <div class="setting-label">
                         <span>PDF Text Batch Size</span>
+                        <div class="setting-info-icon"
+                            data-tooltip="Number of text chunks from digital PDFs to include in the context window.">
+                            <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                        </div>
                         <span class="setting-value" id="val-pdf-text-batch">50</span>
                     </div>
                     <input type="range" class="setting-slider" id="cfg-pdf-text-batch" min="10" max="500" step="10"
@@ -225,6 +245,10 @@
                 <div class="setting-row">
                     <div class="setting-label">
                         <span>Search Similarity Threshold</span>
+                        <div class="setting-info-icon"
+                            data-tooltip="Minimum relevance score for RAG search. Higher values (0.5+) filter out less relevant chunks.">
+                            <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                        </div>
                         <span class="setting-value" id="val-rag-similarity-threshold">0.3</span>
                     </div>
                     <input type="range" class="setting-slider" id="cfg-rag-similarity-threshold" min="0.1" max="0.9"
@@ -235,6 +259,10 @@
                 <div class="setting-row">
                     <div class="setting-label">
                         <span>PDF Vision Batch Size</span>
+                        <div class="setting-info-icon"
+                            data-tooltip="Number of PDF pages converted to images per turn for Vision models (uses more VRAM).">
+                            <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                        </div>
                         <span class="setting-value" id="val-pdf-image-batch">5</span>
                     </div>
                     <input type="range" class="setting-slider" id="cfg-pdf-image-batch" min="1" max="50" step="1"
@@ -245,6 +273,10 @@
                 <div class="setting-row">
                     <div class="setting-label">
                         <span>Image Gen. Resolution</span>
+                        <div class="setting-info-icon"
+                            data-tooltip="Dimensions for FLUX image generation. Higher resolutions require more VRAM and time.">
+                            <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                        </div>
                         <span class="setting-value"></span>
                     </div>
                     <select id="cfg-image-res"
@@ -263,6 +295,10 @@
                 <div class="setting-row">
                     <div class="setting-label">
                         <span>Rolling Window Token Budget</span>
+                        <div class="setting-info-icon"
+                            data-tooltip="Number of tokens allocated to the most recent chat history for immediate context. Larger budgets improve short-term coherence.">
+                            <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                        </div>
                         <span class="setting-value" id="val-rolling-max-tokens">3200</span>
                     </div>
                     <input type="range" class="setting-slider" id="cfg-rolling-max-tokens" min="2400" max="16000"
@@ -273,6 +309,10 @@
                 <div class="setting-row">
                     <div class="setting-label">
                         <span>Summary Token Budget</span>
+                        <div class="setting-info-icon"
+                            data-tooltip="Amount of space reserved for the progressive conversation summary. This preserves the 'gist' of older messages that have left the rolling window.">
+                            <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                        </div>
                         <span class="setting-value" id="val-summary-max-tokens">600</span>
                     </div>
                     <input type="range" class="setting-slider" id="cfg-summary-max-tokens" min="400" max="3000"
