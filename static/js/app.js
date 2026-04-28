@@ -5,9 +5,9 @@
  * wires up event listeners, and exposes globals for inline handlers.
  */
 
-import { state, elements } from './state.js';
+import { state, elements, API_URL } from './state.js';
 import { initMarked, initScrollTracking, copyCode, copyToClipboard } from './utils.js';
-import { sendMessage, stopGeneration } from './chat.js';
+import { sendMessage, stopGeneration, updateRagStatusUI } from './chat.js';
 import { loadChatHistory, startNewChat, hideDeleteModal, toggleSidebar, closeSidebar } from './sidebar.js';
 import { loadModels, addNewModel, switchModel } from './models.js';
 import { openSettings, closeSettings, loadConfig, initConfigSliders } from './settings.js';
@@ -110,16 +110,22 @@ const ragSlider = document.getElementById('rag-slider');
 if (ragSlider) {
     ragSlider.addEventListener('input', async (e) => {
         const offset = parseInt(e.target.value);
-        const limit = parseInt(e.target.step || 50);
-        const total = parseInt(e.target.max) + 1; // max was set to total - 1
-        const end = Math.min(offset + limit, total);
+        const limit = parseInt(e.target.step) || 50;
+        const max = parseInt(e.target.max) || 0;
+        const total = max + 1; 
         
-        document.getElementById('rag-status-text').textContent = `Context: ${offset + 1}-${end} / ${total}`;
+        const textEl = document.getElementById('rag-status-text');
+        if (textEl) {
+            const currentText = textEl.textContent || "";
+            // Preserve the existing prefix (Context: or Search "topic":)
+            const prefix = currentText.includes(':') ? currentText.split(':')[0] + ': ' : "Context: ";
+            const end = Math.min(offset + limit, total);
+            textEl.textContent = `${prefix}${offset + 1}-${end} / ${total}`;
+        }
         
         if (state.currentChatId) {
             try {
-                // Import API_URL from state directly or use relative
-                await fetch(`/api/chats/${state.currentChatId}/rag-status`, {
+                await fetch(`${API_URL}/api/chats/${state.currentChatId}/rag-status`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ offset: offset })
@@ -139,7 +145,7 @@ if (ragSearchToggle) {
         
         try {
             // Get current status to see if we are turning it on or off
-            const statusRes = await fetch(`/api/chats/${state.currentChatId}/rag-status`);
+            const statusRes = await fetch(`${API_URL}/api/chats/${state.currentChatId}/rag-status`);
             const currentStatus = await statusRes.json();
             
             let payload = {};
@@ -153,16 +159,16 @@ if (ragSearchToggle) {
                 payload = { search_mode: false, offset: 0 };
             }
             
-            await fetch(`/api/chats/${state.currentChatId}/rag-status`, {
+            await fetch(`${API_URL}/api/chats/${state.currentChatId}/rag-status`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
             
             // Refresh UI
-            const newStatusRes = await fetch(`/api/chats/${state.currentChatId}/rag-status`);
+            const newStatusRes = await fetch(`${API_URL}/api/chats/${state.currentChatId}/rag-status`);
             const newStatus = await newStatusRes.json();
-            import('./chat.js').then(m => m.updateRagStatusUI(newStatus));
+            updateRagStatusUI(newStatus);
             
         } catch (err) {
             console.error("Failed to toggle RAG search mode", err);
