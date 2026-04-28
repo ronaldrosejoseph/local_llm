@@ -11,6 +11,7 @@ DEFAULT_CONFIG = {
     "temperature": 0.3,
     "top_p": 0.9,
     "repetition_penalty": 1.1,
+    "rag_similarity_threshold": 0.3,
     "pdf_text_pages_per_batch": 50,
     "pdf_image_pages_per_batch": 5,
     "image_generation_resolution": "720x720",

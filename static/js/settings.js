@@ -42,6 +42,7 @@ function applyConfigToUI(cfg) {
     set('cfg-temperature', 'val-temperature', cfg.temperature);
     set('cfg-top-p', 'val-top-p', cfg.top_p);
     set('cfg-rep-penalty', 'val-rep-penalty', cfg.repetition_penalty);
+    set('cfg-rag-similarity-threshold', 'val-rag-similarity-threshold', cfg.rag_similarity_threshold || 0.3);
     set('cfg-pdf-text-batch', 'val-pdf-text-batch', cfg.pdf_text_pages_per_batch || 50);
     set('cfg-pdf-image-batch', 'val-pdf-image-batch', cfg.pdf_image_pages_per_batch || 5);
     set('cfg-image-res', null, cfg.image_generation_resolution || "720x720");
@@ -84,6 +85,10 @@ export function initConfigSliders() {
     document.getElementById('cfg-rep-penalty').addEventListener('input', function () {
         document.getElementById('val-rep-penalty').textContent = parseFloat(this.value).toFixed(2);
         scheduleConfigSave({ repetition_penalty: parseFloat(this.value) });
+    });
+    document.getElementById('cfg-rag-similarity-threshold').addEventListener('input', function () {
+        document.getElementById('val-rag-similarity-threshold').textContent = parseFloat(this.value).toFixed(2);
+        scheduleConfigSave({ rag_similarity_threshold: parseFloat(this.value) });
     });
     document.getElementById('cfg-pdf-text-batch').addEventListener('input', function () {
         document.getElementById('val-pdf-text-batch').textContent = this.value;

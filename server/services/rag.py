@@ -138,8 +138,9 @@ def build_rag_context(chat_id: str, query_content: str):
                 d_norms = doc_embs / np.linalg.norm(doc_embs, axis=1)[:, np.newaxis]
                 similarities = np.dot(d_norms, q_norm)
                 
-                # Use a similarity threshold (0.3) to filter chunks, then sort by relevance
-                filtered_indices = np.where(similarities > 0.3)[0]
+                # Use a similarity threshold to filter chunks, then sort by relevance
+                similarity_threshold = load_config().get("rag_similarity_threshold", 0.3)
+                filtered_indices = np.where(similarities > similarity_threshold)[0]
                 if len(filtered_indices) > 0:
                     all_indices = filtered_indices[np.argsort(similarities[filtered_indices])[::-1]]
                 else:

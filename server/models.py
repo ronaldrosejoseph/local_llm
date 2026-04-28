@@ -33,6 +33,7 @@ class ConfigUpdate(BaseModel):
     temperature: Optional[float] = None
     top_p: Optional[float] = None
     repetition_penalty: Optional[float] = None
+    rag_similarity_threshold: Optional[float] = None
     pdf_text_pages_per_batch: Optional[int] = None
     pdf_image_pages_per_batch: Optional[int] = None
     image_generation_resolution: Optional[str] = None

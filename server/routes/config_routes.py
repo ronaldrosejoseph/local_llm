@@ -26,6 +26,8 @@ def update_config(data: ConfigUpdate):
         cfg["top_p"] = round(max(0.0, min(1.0, data.top_p)), 2)
     if data.repetition_penalty is not None:
         cfg["repetition_penalty"] = round(max(1.0, min(1.5, data.repetition_penalty)), 2)
+    if data.rag_similarity_threshold is not None:
+        cfg["rag_similarity_threshold"] = round(max(0.0, min(1.0, data.rag_similarity_threshold)), 2)
     if data.pdf_text_pages_per_batch is not None:
         cfg["pdf_text_pages_per_batch"] = max(1, int(data.pdf_text_pages_per_batch))
     if data.pdf_image_pages_per_batch is not None:
