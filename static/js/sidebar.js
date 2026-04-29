@@ -22,7 +22,7 @@ export async function loadChatHistory(query = '') {
             if (chat.id === state.currentChatId) item.classList.add('active');
             item.onclick = (e) => {
                 if (e.target.closest('.delete-chat-btn')) return;
-                loadChat(chat.id, chat.title);
+                loadChat(chat.id, chat.title, chat.is_fallback);
             };
 
             const contentDiv = document.createElement('div');
@@ -51,7 +51,7 @@ export async function loadChatHistory(query = '') {
     }
 }
 
-export async function loadChat(chatId, title) {
+export async function loadChat(chatId, title, isFallback = false) {
     state.currentChatId = chatId;
     elements.currentChatTitle.textContent = title;
     elements.welcomeScreen.style.display = 'none';
@@ -91,6 +91,21 @@ export async function loadChat(chatId, title) {
 
         scrollToBottom(true);
         closeSidebar();
+
+        // Lazy Title Upgrade: If this was a fallback title, try to generate a better one now
+        if (isFallback) {
+            console.log("Attempting lazy title upgrade for fallback chat...");
+            fetch(`${API_URL}/api/chats/${chatId}/generate-title`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.title && data.status !== 'fallback' && data.status !== 'still_fallback' && data.status !== 'already_exists') {
+                        console.log("Title upgraded successfully:", data.title);
+                        elements.currentChatTitle.textContent = data.title;
+                        loadChatHistory(); // Refresh sidebar
+                    }
+                })
+                .catch(e => console.error("Lazy title upgrade failed:", e));
+        }
     } catch (error) {
         console.error('Error loading chat:', error);
     }

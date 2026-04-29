@@ -16,9 +16,12 @@ def init_db():
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        title_is_fallback BOOLEAN DEFAULT 0
     )
     """)
+    
+
     
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS messages (
@@ -89,6 +92,7 @@ def init_db():
     add_column_if_missing("chats", "rag_offset", "INTEGER DEFAULT 0")  # Persistent batch pagination
     add_column_if_missing("chats", "rag_search_mode", "BOOLEAN DEFAULT 0")  # 0=Page Order, 1=Similarity Search
     add_column_if_missing("chats", "rag_search_query", "TEXT")  # The topic string for similarity search
+    add_column_if_missing("chats", "title_is_fallback", "BOOLEAN DEFAULT 0")  # Track if title was non-LLM fallback
     
     # Seed default model if no models exist
     cursor.execute("SELECT COUNT(*) FROM models")

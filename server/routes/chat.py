@@ -39,7 +39,7 @@ def get_chats(q: Optional[str] = None):
             chats = conn.execute("SELECT * FROM chats WHERE title LIKE ? ORDER BY updated_at DESC", (search_term,)).fetchall()
         else:
             chats = conn.execute("SELECT * FROM chats ORDER BY updated_at DESC").fetchall()
-    return [{"id": c["id"], "title": c["title"], "updated_at": c["updated_at"]} for c in chats]
+    return [{"id": c["id"], "title": c["title"], "updated_at": c["updated_at"], "is_fallback": bool(c.get("title_is_fallback", 0))} for c in chats]
 
 
 @router.get("/api/chats/{chat_id}/messages")
@@ -55,26 +55,49 @@ def generate_title(chat_id: str):
     """
     Summarize the first message of a chat into a concise title and update the DB.
     """
-    if not hasattr(state, "model") or state.model is None:
-        return {"error": "Model not loaded"}
-
+    # 1. Fetch current chat info to see if we need a title or an upgrade
     with closing(get_db_connection()) as conn:
+        chat = conn.execute("SELECT title, title_is_fallback FROM chats WHERE id = ?", (chat_id,)).fetchone()
+        if not chat:
+            return {"error": "Chat not found"}
+        
+        # If we have a proper title already (not fallback), don't waste compute
+        if chat["title"] != "New Conversation" and not chat["title_is_fallback"]:
+            return {"title": chat["title"], "status": "already_exists"}
+
         msgs = conn.execute("SELECT content FROM messages WHERE chat_id = ? AND role = 'user' ORDER BY timestamp ASC LIMIT 1", (chat_id,)).fetchall()
         if not msgs:
             return {"error": "No user messages found"}
         first_message = msgs[0]["content"]
 
-    # Failsafe: Clean up the prompt if it's a command or attachment
-    # Strip slash commands
+    # 2. Clean up the prompt
+    clean_text = first_message
     for cmd in ["/imagine ", "/edit ", "/web "]:
         if first_message.startswith(cmd):
-            first_message = first_message[len(cmd):].strip()
+            clean_text = first_message[len(cmd):].strip()
             break
             
-    # Strip RAG attachment markers
     if first_message.startswith("[Attached Document: ") or first_message.startswith("[Attached Image: "):
-        # Extract filename or descriptive text from within the markers
-        first_message = first_message.replace("[Attached Document: ", "").replace("[Attached Image: ", "").strip("[] ")
+        clean_text = first_message.replace("[Attached Document: ", "").replace("[Attached Image: ", "").strip("[] ")
+
+    # 3. Handle model missing (Fallback path)
+    if not hasattr(state, "model") or state.model is None:
+        # Only set fallback if we don't have ANY title yet (or it's "New Conversation")
+        if chat["title"] == "New Conversation":
+            words = clean_text.split()
+            fallback_title = " ".join(words[:5])
+            if len(words) > 5: fallback_title += "..."
+            
+            with closing(get_db_connection()) as conn:
+                conn.execute("UPDATE chats SET title = ?, title_is_fallback = 1 WHERE id = ?", (fallback_title, chat_id))
+                conn.commit()
+            return {"title": fallback_title, "status": "fallback"}
+        
+        # If it's already a fallback title and model is still missing, just return current
+        return {"title": chat["title"], "status": "still_fallback"}
+
+    # 4. Model is loaded - Proceed with LLM-based upgrade or initial generation
+    first_message = clean_text
 
     # We must acquire lock securely since we invoke the standard LLM APIs
     if not state.generation_lock.acquire(blocking=True, timeout=5.0):
@@ -116,7 +139,7 @@ def generate_title(chat_id: str):
         title = text_result.strip().strip('"').strip("'")
         
         with closing(get_db_connection()) as conn:
-            conn.execute("UPDATE chats SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (title, chat_id))
+            conn.execute("UPDATE chats SET title = ?, title_is_fallback = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (title, chat_id))
             conn.commit()
             
         return {"title": title}
