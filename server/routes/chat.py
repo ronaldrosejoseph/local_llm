@@ -39,7 +39,7 @@ def get_chats(q: Optional[str] = None):
             chats = conn.execute("SELECT * FROM chats WHERE title LIKE ? ORDER BY updated_at DESC", (search_term,)).fetchall()
         else:
             chats = conn.execute("SELECT * FROM chats ORDER BY updated_at DESC").fetchall()
-    return [{"id": c["id"], "title": c["title"], "updated_at": c["updated_at"], "is_fallback": bool(c.get("title_is_fallback", 0))} for c in chats]
+    return [{"id": c["id"], "title": c["title"], "updated_at": c["updated_at"], "is_fallback": bool(c["title_is_fallback"])} for c in chats]
 
 
 @router.get("/api/chats/{chat_id}/messages")

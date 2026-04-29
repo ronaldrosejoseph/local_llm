@@ -67,11 +67,11 @@
                     <span class="model-badge">LLM</span>
                     <span id="current-chat-title">New Conversation</span>
                     <div id="rag-status-container"
-                        style="display:none; margin-left: 10px; align-items: center; background: rgba(85,170,255,0.05); border: 1px solid rgba(85,170,255,0.2); padding: 2px 8px; border-radius: 6px; gap: 8px;">
+                        style="display:none; margin-left: 10px; align-items: center; background: rgba(85,170,255,0.05); border: 1px solid rgba(85,170,255,0.2); padding: 2px 8px; border-radius: 6px; gap: 8px; flex-wrap: wrap;">
                         <span id="rag-status-text"
                             style="color: var(--accent-color); font-size: 11px; font-weight: 600;"></span>
                         <input type="range" id="rag-slider" min="0" max="0" step="50" value="0"
-                            style="width: 80px; height: 4px; accent-color: var(--accent-color); cursor: pointer;">
+                            style="max-width: 130px; height: 4px; accent-color: var(--accent-color); cursor: pointer;">
                         <button id="rag-search-toggle" title="Toggle Similarity Search"
                             style="background:none; border:none; color:var(--accent-color); cursor:pointer; display:flex; align-items:center; padding: 2px; border-radius: 4px;">
                             <i data-lucide="search" style="width: 14px; height: 14px;"></i>

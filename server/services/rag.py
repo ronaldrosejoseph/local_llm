@@ -178,7 +178,29 @@ def build_rag_context(chat_id: str, query_content: str):
             if total_chunks > (offset + limit):
                 doc_context += f"\nNote: {total_chunks - (offset + limit)} more sections available. Ask 'next' for more.\n"
         else:
-            print("RAG: Text embedding retrieval skipped (likely vision PDF or missing embedder).")
+            # Check for Vision PDF if no text RAG was found
+            vision_meta = None
+            if chat_id in state.document_store:
+                for item in state.document_store[chat_id]:
+                    if item.get("type") == "pdf_metadata":
+                        vision_meta = item
+                        break
+            
+            if vision_meta:
+                total_pages = vision_meta.get("total_pages", 0)
+                limit = load_config().get("pdf_image_pages_per_batch", 5)
+                offset = state.rag_offsets.get(chat_id, 0)
+                rag_meta = {
+                    "offset": offset,
+                    "total": total_pages,
+                    "limit": limit,
+                    "is_vision": True,
+                    "search_mode": False
+                }
+                print(f"RAG: Detected Vision PDF status ({total_pages} pages).")
+            else:
+                print("RAG: No text or vision documents found.")
+                
     except Exception as e:
         print(f"RAG retrieval skipped: {e}")
 

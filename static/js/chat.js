@@ -292,13 +292,23 @@ export function updateRagStatusUI(rs) {
 
     if (container && textEl && slider) {
         if (rs.total > 0) {
+            // Only show slider if there's more than one batch to navigate
+            slider.style.display = rs.total <= rs.limit ? 'none' : 'block';
+            
             slider.min = 0;
-            slider.max = Math.max(0, rs.total - 1);
+            // Fix: Calculate max to be exactly the last valid step start
+            slider.max = Math.floor((rs.total - 1) / rs.limit) * rs.limit;
             slider.step = rs.limit;
             slider.value = rs.offset;
 
             const end = Math.min(rs.offset + rs.limit, rs.total);
-            const prefix = rs.search_mode ? `Search "${rs.search_query}": ` : "Context: ";
+            let prefix = "Context: ";
+            if (rs.search_mode) {
+                prefix = `Search "${rs.search_query}": `;
+            } else if (rs.is_vision) {
+                prefix = "Pages: ";
+            }
+            
             textEl.textContent = `${prefix}${rs.offset + 1}-${end} / ${rs.total}`;
             container.style.display = 'flex';
 
