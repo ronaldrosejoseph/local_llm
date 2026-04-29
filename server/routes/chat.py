@@ -64,6 +64,18 @@ def generate_title(chat_id: str):
             return {"error": "No user messages found"}
         first_message = msgs[0]["content"]
 
+    # Failsafe: Clean up the prompt if it's a command or attachment
+    # Strip slash commands
+    for cmd in ["/imagine ", "/edit ", "/web "]:
+        if first_message.startswith(cmd):
+            first_message = first_message[len(cmd):].strip()
+            break
+            
+    # Strip RAG attachment markers
+    if first_message.startswith("[Attached Document: ") or first_message.startswith("[Attached Image: "):
+        # Extract filename or descriptive text from within the markers
+        first_message = first_message.replace("[Attached Document: ", "").replace("[Attached Image: ", "").strip("[] ")
+
     # We must acquire lock securely since we invoke the standard LLM APIs
     if not state.generation_lock.acquire(blocking=True, timeout=5.0):
         return {"error": "Model busy"}

@@ -15,6 +15,10 @@ Run massive open-source models completely offline while leveraging premium capab
 ![RAG Search](./assets/rag_search.gif)
 *Navigate massive PDFs with a batch slider or use **Similarity Search** to filter the document context for specific topics (e.g., searching "Paying Mortgage Early" in a financial guide).*
 
+### 📸 Image Generation
+![Image Generation](./assets/image_generation.gif)
+*Generate high-fidelity images using FLUX.1 Schnell native on your Mac.*
+
 ---
 
 ## 🌟 Capabilities Matrix
