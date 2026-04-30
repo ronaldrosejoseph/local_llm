@@ -51,39 +51,60 @@ def get_messages(chat_id: str):
 
 
 @router.post("/api/chats/{chat_id}/generate-title")
-def generate_title(chat_id: str):
+@router.post("/api/chats/{chat_id}/generate-title")
+def generate_title_route(chat_id: str):
+    """API endpoint to manually trigger title generation."""
+    return internal_generate_title(chat_id)
+
+
+def internal_generate_title(chat_id: str):
     """
-    Summarize the first message of a chat into a concise title and update the DB.
+    Internal helper to summarize chat context into a title.
+    Can be called by API routes or background memory tasks.
     """
-    # 1. Fetch current chat info to see if we need a title or an upgrade
+    import re
+    # 1. Fetch current chat info
     with closing(get_db_connection()) as conn:
-        chat = conn.execute("SELECT title, title_is_fallback FROM chats WHERE id = ?", (chat_id,)).fetchone()
+        # Priority: 1. Existing Summary, 2. Recent context (last 3 turns), 3. First message
+        chat = conn.execute("SELECT title, title_is_fallback, summary FROM chats WHERE id = ?", (chat_id,)).fetchone()
         if not chat:
             return {"error": "Chat not found"}
-        
-        # If we have a proper title already (not fallback), don't waste compute
-        if chat["title"] != "New Conversation" and not chat["title_is_fallback"]:
-            return {"title": chat["title"], "status": "already_exists"}
-
-        msgs = conn.execute("SELECT content FROM messages WHERE chat_id = ? AND role = 'user' ORDER BY timestamp ASC LIMIT 1", (chat_id,)).fetchall()
-        if not msgs:
-            return {"error": "No user messages found"}
-        first_message = msgs[0]["content"]
-
-    # 2. Clean up the prompt
-    clean_text = first_message
-    for cmd in ["/imagine ", "/edit ", "/web "]:
-        if first_message.startswith(cmd):
-            clean_text = first_message[len(cmd):].strip()
-            break
             
-    if first_message.startswith("[Attached Document: ") or first_message.startswith("[Attached Image: "):
-        clean_text = first_message.replace("[Attached Document: ", "").replace("[Attached Image: ", "").strip("[] ")
+        source_text = ""
+        if chat["summary"]:
+            source_text = chat["summary"]
+            print(f"Title Gen: Using Summary as source for {chat_id}")
+        else:
+            # Get last 3 turns of context for a more relevant "Recent" title
+            recent_msgs = conn.execute(
+                "SELECT role, content FROM messages WHERE chat_id = ? ORDER BY timestamp DESC LIMIT 6",
+                (chat_id,)
+            ).fetchall()
+            
+            if len(recent_msgs) > 2:
+                # Join recent turns (reversed because we fetched DESC)
+                source_text = "\n".join([f"{m['role'].capitalize()}: {m['content']}" for m in reversed(recent_msgs)])
+                print(f"Title Gen: Using Recent Context (last {len(recent_msgs)//2} turns) for {chat_id}")
+            else:
+                # Fallback to the very first user message
+                first_msg_row = conn.execute(
+                    "SELECT content FROM messages WHERE chat_id = ? AND role = 'user' ORDER BY timestamp ASC LIMIT 1",
+                    (chat_id,)
+                ).fetchone()
+                source_text = first_msg_row["content"] if first_msg_row else ""
+                print(f"Title Gen: Using First Message as source for {chat_id}")
+        
+        first_message = source_text
+
+    # 2. Clean up the prompt (strip commands and attachments)
+    clean_text = first_message.strip()
+    clean_text = re.sub(r'^/(imagine|edit|web|next)\s*', '', clean_text).strip()
+    clean_text = re.sub(r'^\[Attached (Document|Image|Scanned Document): (.*?)\]', r'\2', clean_text).strip()
+    clean_text = clean_text.strip("[]\"' ")
 
     # 3. Handle model missing (Fallback path)
     if not hasattr(state, "model") or state.model is None:
-        # Only set fallback if we don't have ANY title yet (or it's "New Conversation")
-        if chat["title"] == "New Conversation":
+        if chat["title"] == "New Conversation" or chat["title_is_fallback"]:
             words = clean_text.split()
             fallback_title = " ".join(words[:5])
             if len(words) > 5: fallback_title += "..."
@@ -92,48 +113,25 @@ def generate_title(chat_id: str):
                 conn.execute("UPDATE chats SET title = ?, title_is_fallback = 1 WHERE id = ?", (fallback_title, chat_id))
                 conn.commit()
             return {"title": fallback_title, "status": "fallback"}
-        
-        # If it's already a fallback title and model is still missing, just return current
         return {"title": chat["title"], "status": "still_fallback"}
 
-    # 4. Model is loaded - Proceed with LLM-based upgrade or initial generation
-    first_message = clean_text
-
-    # We must acquire lock securely since we invoke the standard LLM APIs
+    # 4. Model is loaded - Proceed with LLM-based generation
     if not state.generation_lock.acquire(blocking=True, timeout=5.0):
         return {"error": "Model busy"}
         
     try:
-        prompt_txt = f"Summarize this prompt strictly into a title with exactly 2 to 5 words. Do not use quotes or punctuation at the end:\n\n{first_message}"
+        prompt_txt = f"Summarize this prompt strictly into a title with exactly 2 to 5 words. Do not use quotes or punctuation at the end:\n\n{clean_text}"
         messages = [{"role": "user", "content": prompt_txt}]
         
         if state.IS_VLM:
             from mlx_vlm import generate as generate_vlm
             from mlx_vlm.prompt_utils import apply_chat_template as apply_vlm_template
-            
-            prompt = apply_vlm_template(
-                state.processor,
-                state.vlm_config,
-                messages,
-                num_images=0
-            )
-            result = generate_vlm(
-                state.model,
-                state.processor,
-                prompt=prompt,
-                max_tokens=12,
-                verbose=False
-            )
+            prompt = apply_vlm_template(state.processor, state.vlm_config, messages, num_images=0)
+            result = generate_vlm(state.model, state.processor, prompt=prompt, max_tokens=12, verbose=False)
         else:
             from mlx_lm import generate
             prompt = state.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-            result = generate(
-                state.model, 
-                state.tokenizer, 
-                prompt=prompt, 
-                max_tokens=12, 
-                verbose=False
-            )
+            result = generate(state.model, state.tokenizer, prompt=prompt, max_tokens=12, verbose=False)
             
         text_result = result if isinstance(result, str) else getattr(result, "text", str(result))
         title = text_result.strip().strip('"').strip("'")
@@ -268,8 +266,8 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
         chat_exists = conn.execute("SELECT id FROM chats WHERE id = ?", (chat_id,)).fetchone()
         if not chat_exists:
             title = chat_data.message[:50] + "..." if len(chat_data.message) > 50 else chat_data.message
-            conn.execute("INSERT INTO chats (id, title, system_prompt) VALUES (?, ?, ?)", 
-                         (chat_id, title, chat_data.system_prompt))
+            conn.execute("INSERT INTO chats (id, title, system_prompt, title_is_fallback) VALUES (?, ?, ?, ?)", 
+                         (chat_id, title, chat_data.system_prompt, 1))
             conn.commit()
 
     # 2. Save user message

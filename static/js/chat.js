@@ -45,6 +45,7 @@ export async function sendMessage(text = null) {
     ];
 
     let requestChatId = state.currentChatId;
+    const isNewChat = !requestChatId;
     state.abortController = new AbortController();
 
     // Hoist stream state
@@ -224,8 +225,12 @@ export async function sendMessage(text = null) {
             }
         });
 
-        // Auto-generate title if it's a new conversation
-        if (elements.currentChatTitle.textContent === "New Conversation" && state.currentChatId === requestChatId && fullContent.trim().length > 0) {
+        // Auto-generate/Refine title (First turn + every 3 turns)
+        const userMsgCount = elements.messagesContainer.querySelectorAll('.message.user').length;
+        const isFirstTurn = isNewChat || elements.currentChatTitle.textContent === "New Conversation";
+        const shouldRefine = isFirstTurn || (userMsgCount > 1 && userMsgCount % 3 === 0);
+        
+        if (shouldRefine && state.currentChatId === requestChatId && fullContent.trim().length > 0) {
             fetch(`${API_URL}/api/chats/${requestChatId}/generate-title`, { method: 'POST' })
                 .then(res => res.json())
                 .then(data => {
@@ -234,7 +239,7 @@ export async function sendMessage(text = null) {
                         loadChatHistory();
                     }
                 })
-                .catch(err => console.error("Could not auto-generate title:", err));
+                .catch(err => console.error("Could not refine title:", err));
         }
     }
 }

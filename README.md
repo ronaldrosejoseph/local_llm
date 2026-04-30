@@ -9,7 +9,7 @@ Run massive open-source models completely offline while leveraging premium capab
 | **AI Chatting & Titles** | **Model Settings & Personas** |
 |:---:|:---:|
 | ![Chat Interface](./assets/chat_interface.gif) | ![Settings & Persona](./assets/settings_persona.gif) |
-| *Sleek dark-mode interface with auto-generated chat titles and code highlighting.* | *Granular control over generation parameters and custom system personas.* |
+| *Sleek dark-mode interface with dynamic, auto-refining chat titles and code highlighting.* | *Granular control over generation parameters and custom system personas.* |
 
 ### 📚 Advanced RAG Navigation
 ![RAG Search](./assets/rag_search.gif)
@@ -29,6 +29,7 @@ This application transforms your machine into a fully private AI workstation:
 - **Apple MLX Engine**: Experience lightning-fast text generation using quantized `mlx-community` LLMs without draining your battery.
 - **Local & Private**: All inference, embedding, and chat history stay 100% locally on your machine.
 - **Persistent Memory**: Chat histories are saved securely to a SQLite database and can be resumed at any time.
+- **Dynamic Chat Titles**: Titles are auto-generated from your first message and automatically refine themselves every 3 turns. The system uses a tiered strategy (First Msg → Recent Context → Progressive Summary) to ensure the title always reflects the current topic.
 
 ### 🔍 Advanced Tooling
 - **Live Web Search (`/web`)**: 
@@ -62,7 +63,7 @@ This application transforms your machine into a fully private AI workstation:
 > ./venv/bin/python3 -c "from huggingface_hub import login; login(token='YOUR_HF_TOKEN')"
 > ```
 - **Vision Models (`mlx_vlm`)**: 
-  - Hook into multimodal functionality natively! Pass photos seamlessly into Vision LLMs locally (e.g., `Qwen2.5-VL`).
+  - Hook into multimodal functionality natively! Pass photos seamlessly into Vision LLMs locally (e.g., `Gemma-4`).
 
 ### 🎙️ Audio Interaction
 - **Speech-to-Text**: Click the mic icon to dictate physical voice sequences to the LLM.
@@ -84,7 +85,7 @@ This application transforms your machine into a fully private AI workstation:
 
 ### 1. Requirements
 
-- A Mac with Apple Silicon (M1, M2, M3, etc.)
+- A Mac with Apple Silicon (M-series chips).
 - Python 3.14+ (or compatible environment).
 
 ### 2. Fast Setup (Recommended)
@@ -129,7 +130,7 @@ Control your FastAPI application running in the background natively:
 
 ## 🧩 Modding & Available Models
 
-The application dynamically detects model environments. You can add new ones by pasting their Hugging Face identifier into the custom UI settings modal:
+The application dynamically detects model environments. You can add new ones by pasting their Hugging Face identifier into the custom UI settings modal: [MLX Community LLM Collections](https://huggingface.co/mlx-community/collections)
 
 - **Gemma 4 2B (Default)**: `mlx-community/gemma-4-e2b-it-4bit`
 - **Gemma 4 4B**: `mlx-community/gemma-4-e4b-it-4bit`

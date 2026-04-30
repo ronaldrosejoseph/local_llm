@@ -110,7 +110,7 @@
 | `POST` | `/api/chat?chat_id=` | Send message (includes `system_prompt` for new chats), returns SSE tokens |
 | `GET` | `/api/chats/{chat_id}/system-prompt` | Get the system prompt for a chat |
 | `PUT` | `/api/chats/{chat_id}/system-prompt` | Update the system prompt for a chat |
-| `POST` | `/api/chats/{chat_id}/generate-title`| Auto-generates a 3-5 word title using the LLM for a new conversation |
+| `POST` | `/api/chats/{chat_id}/generate-title`| Auto-generates or refines a chat title using a tiered context strategy |
 | `DELETE` | `/api/chats/{chat_id}` | Delete a chat (including all messages, docs, and physical assets) |
 | `GET` | `/api/chats/{chat_id}/rag-status` | Get RAG pagination offset and total chunks |
 | `PUT` | `/api/chats/{chat_id}/rag-status` | Update persistent RAG pagination offset |
@@ -161,8 +161,16 @@ The chat endpoint uses a two-layer memory system instead of sending the entire c
 - **Rolling Window** — Token-budget-aware: fills recent messages newest-first until the context budget is spent. Provides short-term conversational coherence.
 - **Progressive Summary** — Older messages that fall out of the rolling window are incrementally summarized by the LLM and stored on the `chats.summary` column. Runs asynchronously post-generation.
 - **Context Assembly** (`assemble_context()`) allocates the model's context window as: system prompt → summary → rolling window → current message, with generation headroom reserved.
-- **Post-Generation Tasks** — After each response, a background thread checks if summarization is needed.
 - Configurable via `config.json`: `rolling_window_max_tokens`, `summary_max_tokens`.
+
+### Dynamic Title Refinement
+The chat title evolves as the conversation progresses to maintain relevance:
+- **Tiered Context Strategy**:
+  - **Turn 1**: Uses the first message (cleaned of commands).
+  - **Turns 3-9**: Uses the last 3 message pairs (User + Assistant) to refine context.
+  - **Turn 10+**: Uses the **Progressive Summary** as the definitive source for the title.
+- **Triggering**: The frontend triggers a refinement on the first turn and every 3 turns thereafter.
+- **Fallback Logic**: If the model is not loaded during the first turn, a temporary "fallback" title is generated from raw text, which is later "upgraded" once the model is active.
 
 ### Image Generation
 - Uses `mflux` library (FLUX.1 Schnell, 4-bit quantized).
@@ -206,7 +214,7 @@ say_processes = set()      # Tracked subprocess.Popen objects for TTS
 -- Chat conversations
 chats (id TEXT PK, title TEXT, created_at TIMESTAMP, updated_at TIMESTAMP, system_prompt TEXT,
        summary TEXT, summary_through_msg_id INTEGER, rag_offset INTEGER,
-       rag_search_mode BOOLEAN, rag_search_query TEXT)  -- Progressive memory summary + RAG persistence + Search Mode
+       rag_search_mode BOOLEAN, rag_search_query TEXT, title_is_fallback BOOLEAN)  -- Memory summary + RAG + Title state
 
 -- Messages within chats
 messages (id INTEGER PK, chat_id TEXT FK, role TEXT, content TEXT, timestamp TIMESTAMP,

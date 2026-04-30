@@ -326,10 +326,20 @@ def maybe_update_summary(chat_id: str):
 
     print(f"Memory: {len(unsummarized)} messages need summarization for chat {chat_id}")
 
-    # Build the text of unsummarized messages
-    new_text = "\n".join(
-        f"{m['role'].capitalize()}: {m['content']}" for m in unsummarized
-    )
+    # Build the text of unsummarized messages, cleaning up commands and markers
+    cleaned_unsummarized = []
+    for m in unsummarized:
+        content = m['content']
+        if m['role'] == 'user':
+            # Strip commands and markers from user messages for cleaner summary
+            import re
+            content = re.sub(r'^/(imagine|edit|web|next)\s*', '', content).strip()
+            content = re.sub(r'\[Attached (Document|Image|Scanned Document):.*?\]', '', content).strip()
+        
+        if content:
+            cleaned_unsummarized.append(f"{m['role'].capitalize()}: {content}")
+
+    new_text = "\n".join(cleaned_unsummarized)
 
     # Truncate to prevent prompt explosion
     if len(new_text) > 4000:
@@ -414,6 +424,7 @@ def post_generation_tasks(chat_id: str, user_content: str,
         try:
             # 1. Update summary if messages have fallen out of window
             maybe_update_summary(chat_id)
+
         except Exception as e:
             print(f"Memory: Post-generation tasks failed: {e}")
 
