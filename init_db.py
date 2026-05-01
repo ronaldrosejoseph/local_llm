@@ -1,7 +1,9 @@
 import sqlite3
 import os
 
-DB_PATH = "database/chats.db"
+# Get the directory where init_db.py is located
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "database", "chats.db")
 
 def init_db():
     if not os.path.exists("database"):

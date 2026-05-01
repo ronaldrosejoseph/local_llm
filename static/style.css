@@ -163,6 +163,11 @@ html {
     transition: all 0.2s;
 }
 
+.settings-add-model input::placeholder {
+    color: var(--text-muted);
+    opacity: 0.3;
+}
+
 .settings-add-model input:focus {
     border-color: var(--accent-color);
     background: rgba(255, 255, 255, 0.08);

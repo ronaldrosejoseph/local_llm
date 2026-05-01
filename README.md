@@ -88,9 +88,19 @@ This application transforms your machine into a fully private AI workstation:
 - A Mac with Apple Silicon (M-series chips).
 - Python 3.14+ (or compatible environment).
 
-### 2. Fast Setup (Recommended)
+### 2. Native macOS Application (Recommended for All Users) 🍎
 
-To install and boot the server instantly without fighting dependencies, simply execute the startup shell script. It will automatically detect your environment, install or compile the required dependencies, create your virtual environment natively, and launch the server:
+For the most premium and seamless experience, use the pre-built macOS application. This provides a dedicated window for your AI and handles all server management for you.
+
+1.  **Launch**: Double-click **`Local LLM.app`** in the project folder. (You can move this to your `/Applications` folder for easy access).
+2.  **Startup**: A loading spinner will appear while the backend server boots up.
+3.  **Shutdown**: Closing the app window (or Cmd+Q) will automatically shut down the LLM server and free up your Mac's memory.
+
+---
+
+### 3. Fast Setup (Terminal Only)
+
+If you prefer using the terminal, you can boot the server manually. This will automatically detect your environment, install or compile dependencies, and launch the server:
 
 ```bash
 chmod +x start.sh stop.sh restart.sh
@@ -99,7 +109,7 @@ chmod +x start.sh stop.sh restart.sh
 
 *(Note: The very first time you execute an image generation command, the `mflux` library will forcibly intercept your command to download the FLUX.1 baseline models locally, which consumes roughly **~24GB** of space inside `~/.cache/`. Do not interrupt this process.)*
 
-### 3. Server Management
+### 4. Server Management
 
 Control your FastAPI application running in the background natively:
 

@@ -3,8 +3,11 @@ Database connection helper.
 """
 
 import sqlite3
+import os
 
-DB_PATH = "database/chats.db"
+# Use absolute path relative to this file
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DB_PATH = os.path.join(BASE_DIR, "database", "chats.db")
 
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)

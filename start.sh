@@ -38,8 +38,7 @@ if ! brew list python@3 &>/dev/null && ! brew list python3 &>/dev/null && ! brew
     # Disable auto-update just for this install to speed it up
     HOMEBREW_NO_AUTO_UPDATE=1 brew install python3
 else
-    # Swiftly check if the installed brew python is older than 3.14 without hitting the network
-    # Swiftly check if the installed brew python is older than 3.14 without hitting the network
+    # Check if the installed brew python is older than 3.14 without hitting the network
     if ! "$(brew --prefix)/bin/python3" -c "import sys; sys.exit(0 if sys.version_info >= (3, 14) else 1)" 2>/dev/null; then
         echo "Installed Python is older than 3.14. Upgrading via Homebrew..."
         brew upgrade python3
@@ -59,17 +58,29 @@ if [ ! -d "venv" ]; then
     fi
 fi
 
-# 2. Install/Update requirements
+# 4. Install/Update requirements (only when requirements.txt changes)
+REQ_HASH_FILE=".requirements.hash"
 if [ -f "requirements.txt" ]; then
-    echo "Checking/Installing requirements..."
-    ./venv/bin/pip install -r requirements.txt
-    if [ $? -ne 0 ]; then
-        echo "Error: Failed to install requirements."
-        exit 1
+    if command -v md5 >/dev/null 2>&1; then
+        REQ_HASH=$(md5 -q requirements.txt)
+    else
+        REQ_HASH=$(md5sum requirements.txt | awk '{ print $1 }')
+    fi
+
+    if [ ! -f "$REQ_HASH_FILE" ] || [ "$REQ_HASH" != "$(cat "$REQ_HASH_FILE")" ]; then
+        echo "Requirements changed. Installing/updating..."
+        ./venv/bin/pip install -r requirements.txt
+        if [ $? -ne 0 ]; then
+            echo "Error: Failed to install requirements."
+            exit 1
+        fi
+        echo "$REQ_HASH" > "$REQ_HASH_FILE"
+    else
+        echo "Requirements up to date."
     fi
 fi
 
-# 3. Initialize database and handle schema updates
+# 5. Initialize database and handle schema updates
 if [ ! -d "database" ]; then
     echo "Creating database directory..."
     mkdir -p database
@@ -119,6 +130,13 @@ while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
     if grep -q "Application startup complete" "$LOG_FILE" 2>/dev/null; then
         break
     fi
+    # Check for early crashes or DB locks
+    if grep -iq "OperationalError: database is locked" "$LOG_FILE" 2>/dev/null; then
+        echo ""
+        echo "❌ Error: Database is locked by another process."
+        echo "   Please run ./stop.sh manually to clear lingering processes."
+        exit 1
+    fi
     sleep 1
     ELAPSED=$((ELAPSED + 1))
 done
@@ -128,7 +146,12 @@ if [ $ELAPSED -ge $TIMEOUT ]; then
     echo "⚠️  Server is taking longer than expected to start."
     echo "   Check $LOG_FILE for details. It may still be loading the model."
 else
-    echo "✅ Server is ready!"
+    # One last check for any errors that might have happened just as it finished
+    if grep -iqE "(database.*error|error.*database)" "$LOG_FILE" 2>/dev/null; then
+        echo "⚠️  Server started, but database errors were detected in logs."
+    else
+        echo "✅ Server is ready!"
+    fi
 fi
 
 echo ""
