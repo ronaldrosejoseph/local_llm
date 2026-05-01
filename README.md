@@ -92,9 +92,17 @@ This application transforms your machine into a fully private AI workstation:
 
 For the most premium and seamless experience, use the pre-built macOS application. This provides a dedicated window for your AI and handles all server management for you.
 
-1.  **Launch**: Double-click **`Local LLM.app`** in the project folder. (You can move this to your `/Applications` folder for easy access).
-2.  **Startup**: A loading spinner will appear while the backend server boots up.
-3.  **Shutdown**: Closing the app window (or Cmd+Q) will automatically shut down the LLM server and free up your Mac's memory.
+1.  **Clone & Navigate**: Open your terminal and clone the repository:
+    ```bash
+    git clone https://github.com/ronaldrosejoseph/local_llm.git
+    cd local_llm
+    ```
+2.  **Build**: Run **`./make_app.sh`** to build the application. This will create **`Local LLM.app`** in the project folder.
+3.  **Launch**: Double-click **`Local LLM.app`**. (You can move this to your `/Applications` folder for easy access).
+4.  **Startup**: A loading spinner will appear while the backend server boots up.
+    > [!IMPORTANT]
+    > **First Boot**: The very first launch will take **several minutes** as it automatically downloads the required Python environment and the baseline LLM model.
+5.  **Shutdown**: Closing the app window (or Cmd+Q) will automatically shut down the LLM server and free up your Mac's memory.
 
 ---
 
@@ -106,6 +114,9 @@ If you prefer using the terminal, you can boot the server manually. This will au
 chmod +x start.sh stop.sh restart.sh
 ./start.sh
 ```
+
+> [!IMPORTANT]
+> **First Boot**: The initial run will take **several minutes** to download the Python environment and baseline models.
 
 *(Note: The very first time you execute an image generation command, the `mflux` library will forcibly intercept your command to download the FLUX.1 baseline models locally, which consumes roughly **~24GB** of space inside `~/.cache/`. Do not interrupt this process.)*
 
