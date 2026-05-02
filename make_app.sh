@@ -23,6 +23,7 @@ mkdir -p "${APP_PATH}/Contents/Resources"
 swiftc "macos_app/app_wrapper_compiled.swift" \
     -o "${APP_PATH}/Contents/MacOS/${APP_NAME}" \
     -target arm64-apple-macosx14.0 \
+    -framework Speech \
     -O
 
 # 5. Copy Icon
@@ -61,6 +62,10 @@ cat <<EOF > "${APP_PATH}/Contents/Info.plist"
         <key>NSAllowsLocalNetworking</key>
         <true/>
     </dict>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Local LLM needs microphone access for speech-to-text input.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Local LLM uses on-device speech recognition to transcribe your voice into chat messages.</string>
 </dict>
 </plist>
 EOF

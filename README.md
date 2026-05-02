@@ -100,8 +100,8 @@ For the most premium and seamless experience, use the pre-built macOS applicatio
 2.  **Build**: Run **`./make_app.sh`** to build the application. This will create **`Local LLM.app`** in the project folder.
 3.  **Launch**: Double-click **`Local LLM.app`**. (You can move this to your `/Applications` folder for easy access).
 4.  **Startup**: A loading spinner will appear while the backend server boots up.
-    > [!IMPORTANT]
-    > **First Boot**: The very first launch will take **several minutes** as it automatically downloads the required Python environment and the baseline LLM model.
+> [!IMPORTANT]
+> **First Boot**: The very first launch will take **several minutes** as it automatically downloads the required Python environment and the baseline LLM model.
 5.  **Shutdown**: Closing the app window (or Cmd+Q) will automatically shut down the LLM server and free up your Mac's memory.
 
 ---

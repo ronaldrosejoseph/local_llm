@@ -1,7 +1,8 @@
 import Cocoa
 import WebKit
+import Speech
 
-class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
     var window: NSWindow!
     var webView: WKWebView!
     var loadingOverlay: NSView?
@@ -48,8 +49,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         // Enable Developer Tools (Right-click -> Inspect Element)
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
         
+        // Register native speech recognition bridge
+        config.userContentController.add(self, name: "speechRecognition")
+        
         webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
+        webView.uiDelegate = self
         webView.translatesAutoresizingMaskIntoConstraints = false
         // Hide the WebView's default white background so the loading overlay shows through
         webView.setValue(false, forKey: "drawsBackground")
@@ -122,6 +127,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     
     // MARK: - Loading Overlay
     
+    var statusLabel: NSTextField?
+    var statusTimer: Timer?
+    
     func setupLoadingOverlay() {
         // Detect system appearance (light vs dark mode)
         let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
@@ -134,7 +142,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
             ? NSColor(red: 0.07, green: 0.07, blue: 0.09, alpha: 1.0).cgColor
             : NSColor(red: 0.98, green: 0.98, blue: 0.98, alpha: 1.0).cgColor
         
-        // Container for spinner + label (vertically centered together)
+        // Container for spinner + labels (vertically centered together)
         let stack = NSStackView()
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.orientation = .vertical
@@ -146,7 +154,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         spinner.style = .spinning
         spinner.controlSize = .regular
         spinner.translatesAutoresizingMaskIntoConstraints = false
-        // Dark bg → light (aqua) spinner renders dark... actually:
         // .darkAqua appearance → light/white spinner (for dark backgrounds)
         // .aqua appearance → dark/gray spinner (for light backgrounds)
         spinner.appearance = isDark
@@ -154,7 +161,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
             : NSAppearance(named: .aqua)
         spinner.startAnimation(nil)
         
-        // Label
+        // Title Label
         let label = NSTextField(labelWithString: "Starting Local LLM...")
         label.translatesAutoresizingMaskIntoConstraints = false
         label.font = NSFont.systemFont(ofSize: 14, weight: .medium)
@@ -163,8 +170,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
             : NSColor(white: 0.35, alpha: 1.0)
         label.alignment = .center
         
+        // Dynamic Status Label (shows current step)
+        let status = NSTextField(labelWithString: "Checking system environment...")
+        status.translatesAutoresizingMaskIntoConstraints = false
+        status.font = NSFont.systemFont(ofSize: 11, weight: .regular)
+        status.textColor = isDark
+            ? NSColor(white: 0.40, alpha: 1.0)
+            : NSColor(white: 0.50, alpha: 1.0)
+        status.alignment = .center
+        self.statusLabel = status
+        
         stack.addArrangedSubview(spinner)
         stack.addArrangedSubview(label)
+        stack.addArrangedSubview(status)
         overlay.addSubview(stack)
         
         window.contentView?.addSubview(overlay)
@@ -178,10 +196,34 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
             stack.centerXAnchor.constraint(equalTo: overlay.centerXAnchor),
             stack.centerYAnchor.constraint(equalTo: overlay.centerYAnchor),
         ])
+        
+        // Start polling the status file for updates
+        startStatusPolling()
+    }
+    
+    func startStatusPolling() {
+        let statusPath = "\(projectPath)/.startup_status"
+        statusTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            guard let self = self, self.loadingOverlay != nil else {
+                self?.statusTimer?.invalidate()
+                self?.statusTimer = nil
+                return
+            }
+            
+            if let content = try? String(contentsOfFile: statusPath, encoding: .utf8) {
+                let text = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !text.isEmpty {
+                    self.statusLabel?.stringValue = text
+                }
+            }
+        }
     }
     
     func hideLoadingOverlay() {
         guard let overlay = loadingOverlay else { return }
+        // Stop polling
+        statusTimer?.invalidate()
+        statusTimer = nil
         // Re-enable WebView background drawing before revealing it
         webView.setValue(true, forKey: "drawsBackground")
         NSAnimationContext.runAnimationGroup({ context in
@@ -190,6 +232,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         }, completionHandler: {
             overlay.removeFromSuperview()
             self.loadingOverlay = nil
+            self.statusLabel = nil
         })
     }
 
@@ -249,6 +292,159 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
             print("📡 WebView received HTTP \(httpResponse.statusCode) for \(httpResponse.url?.absoluteString ?? "nil")")
         }
         decisionHandler(.allow)
+    }
+    
+    // MARK: - WKUIDelegate (File Upload Panel)
+    
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
+        let openPanel = NSOpenPanel()
+        openPanel.canChooseFiles = true
+        openPanel.canChooseDirectories = false
+        openPanel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        openPanel.begin { result in
+            if result == .OK {
+                completionHandler(openPanel.urls)
+            } else {
+                completionHandler(nil)
+            }
+        }
+    }
+    
+    // MARK: - WKScriptMessageHandler (Native Speech Recognition)
+    
+    private var audioEngine: AVAudioEngine?
+    private var speechRecognizer: SFSpeechRecognizer?
+    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var recognitionTask: SFSpeechRecognitionTask?
+    private var silenceTimer: Timer?
+    
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == "speechRecognition" else { return }
+        guard let action = message.body as? String else { return }
+        
+        if action == "start" {
+            startNativeSpeechRecognition()
+        } else if action == "stop" {
+            stopNativeSpeechRecognition()
+        }
+    }
+    
+    private func startNativeSpeechRecognition() {
+        // Request permissions
+        SFSpeechRecognizer.requestAuthorization { [weak self] authStatus in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                
+                switch authStatus {
+                case .authorized:
+                    self.beginRecording()
+                case .denied, .restricted, .notDetermined:
+                    print("❌ Speech recognition permission denied")
+                    self.webView.evaluateJavaScript("window._nativeSpeechError('Speech recognition permission denied. Please enable it in System Settings > Privacy & Security > Speech Recognition.')")
+                @unknown default:
+                    break
+                }
+            }
+        }
+    }
+    
+    private func beginRecording() {
+        // Cancel any existing task
+        recognitionTask?.cancel()
+        recognitionTask = nil
+        
+        speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+        guard let speechRecognizer = speechRecognizer, speechRecognizer.isAvailable else {
+            print("❌ Speech recognizer not available")
+            webView.evaluateJavaScript("window._nativeSpeechError('Speech recognizer not available on this device.')")
+            return
+        }
+        
+        recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
+        guard let recognitionRequest = recognitionRequest else { return }
+        recognitionRequest.shouldReportPartialResults = true
+        
+        audioEngine = AVAudioEngine()
+        guard let audioEngine = audioEngine else { return }
+        
+        let inputNode = audioEngine.inputNode
+        let recordingFormat = inputNode.outputFormat(forBus: 0)
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
+            recognitionRequest.append(buffer)
+        }
+        
+        audioEngine.prepare()
+        do {
+            try audioEngine.start()
+            print("🎙️ Native speech recognition started")
+            webView.evaluateJavaScript("window._nativeSpeechStarted()")
+            resetSilenceTimer()
+        } catch {
+            print("❌ Audio engine failed to start: \(error)")
+            webView.evaluateJavaScript("window._nativeSpeechError('Microphone access failed. Please allow microphone access in System Settings.')")
+            return
+        }
+        
+        recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
+            guard let self = self else { return }
+            
+            if let result = result {
+                let transcript = result.bestTranscription.formattedString
+                let escaped = transcript
+                    .replacingOccurrences(of: "\\", with: "\\\\")
+                    .replacingOccurrences(of: "'", with: "\\'")
+                    .replacingOccurrences(of: "\n", with: "\\n")
+                
+                DispatchQueue.main.async {
+                    self.webView.evaluateJavaScript("window._nativeSpeechPartialResult('\(escaped)')")
+                    self.resetSilenceTimer()
+                }
+                
+                if result.isFinal {
+                    DispatchQueue.main.async {
+                        self.stopNativeSpeechRecognition()
+                        self.webView.evaluateJavaScript("window._nativeSpeechEnded()")
+                    }
+                }
+            }
+            
+            if let error = error {
+                print("❌ Speech recognition error: \(error.localizedDescription)")
+                DispatchQueue.main.async {
+                    self.stopNativeSpeechRecognition()
+                    self.webView.evaluateJavaScript("window._nativeSpeechEnded()")
+                }
+            }
+        }
+    }
+    
+    private func resetSilenceTimer() {
+        silenceTimer?.invalidate()
+        DispatchQueue.main.async {
+            self.silenceTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
+                self?.handleSilenceTimeout()
+            }
+        }
+    }
+    
+    private func handleSilenceTimeout() {
+        print("🎙️ Silence detected, auto-stopping speech recognition.")
+        stopNativeSpeechRecognition()
+        webView.evaluateJavaScript("window._nativeSpeechEnded()")
+    }
+    
+    private func stopNativeSpeechRecognition() {
+        silenceTimer?.invalidate()
+        silenceTimer = nil
+        
+        audioEngine?.stop()
+        audioEngine?.inputNode.removeTap(onBus: 0)
+        recognitionRequest?.endAudio()
+        recognitionTask?.cancel()
+        recognitionTask = nil
+        recognitionRequest = nil
+        audioEngine = nil
+        print("🎙️ Native speech recognition stopped")
     }
 
     func windowWillClose(_ notification: Notification) {

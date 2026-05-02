@@ -1,5 +1,10 @@
 /**
  * Speech functions — text-to-speech and speech-to-text.
+ * 
+ * Supports two speech-to-text backends:
+ *   1. Web Speech API (webkitSpeechRecognition) — used in regular browsers.
+ *   2. Native macOS SFSpeechRecognizer — used inside the WKWebView app wrapper,
+ *      bridged via WKScriptMessageHandler.
  */
 
 import { state, elements, API_URL } from './state.js';
@@ -29,11 +34,51 @@ export async function stopSpeaking() {
     }
 }
 
-// --- Speech-to-Text (Web Speech API) ---
+// --- Speech-to-Text ---
+
+// Detect if we're running inside the macOS WKWebView wrapper
+const isNativeApp = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.speechRecognition);
 
 let recognition = null;
 
-export function initSpeechRecognition() {
+// --- Native macOS SFSpeechRecognizer bridge (WKWebView) ---
+
+function setupNativeSpeechBridge() {
+    // Callbacks invoked by the Swift side via evaluateJavaScript
+    window._nativeSpeechStarted = () => {
+        state.isRecording = true;
+        elements.voiceBtn.classList.add('recording');
+    };
+
+    window._nativeSpeechPartialResult = (transcript) => {
+        elements.chatInput.value = transcript;
+        // Auto-expand textarea
+        elements.chatInput.style.height = 'auto';
+        elements.chatInput.style.height = elements.chatInput.scrollHeight + 'px';
+    };
+
+    window._nativeSpeechError = (msg) => {
+        console.error('Native speech error:', msg);
+        stopRecording();
+        alert(msg);
+    };
+
+    window._nativeSpeechEnded = () => {
+        if (state.isRecording) {
+            stopRecording();
+            const text = elements.chatInput.value.trim();
+            if (text) {
+                import('./chat.js').then(({ sendMessage }) => {
+                    sendMessage(text);
+                });
+            }
+        }
+    };
+}
+
+// --- Web Speech API (regular browser) ---
+
+function setupWebSpeechRecognition() {
     if ('webkitSpeechRecognition' in window) {
         recognition = new webkitSpeechRecognition();
         recognition.continuous = false;
@@ -65,7 +110,35 @@ export function initSpeechRecognition() {
     }
 }
 
+export function initSpeechRecognition() {
+    if (isNativeApp) {
+        console.log('🎙️ Using native macOS speech recognition');
+        setupNativeSpeechBridge();
+    } else {
+        setupWebSpeechRecognition();
+    }
+}
+
 export function toggleRecording() {
+    if (isNativeApp) {
+        // Use native macOS SFSpeechRecognizer via the Swift bridge
+        if (state.isRecording) {
+            window.webkit.messageHandlers.speechRecognition.postMessage('stop');
+            stopRecording();
+            const text = elements.chatInput.value.trim();
+            if (text) {
+                import('./chat.js').then(({ sendMessage }) => {
+                    sendMessage(text);
+                });
+            }
+        } else {
+            elements.chatInput.value = '';
+            window.webkit.messageHandlers.speechRecognition.postMessage('start');
+        }
+        return;
+    }
+
+    // Fallback: Web Speech API
     if (!recognition) {
         alert('Speech recognition is not supported in this browser.');
         return;

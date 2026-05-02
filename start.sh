@@ -4,6 +4,7 @@
 
 PID_FILE="server.pid"
 LOG_FILE="server.log"
+STATUS_FILE=".startup_status"
 
 if [ -f "$PID_FILE" ]; then
     PID=$(cat "$PID_FILE")
@@ -18,10 +19,12 @@ if [ -f "$PID_FILE" ]; then
 fi
 
 echo "Starting LLM server..."
+echo "Checking system environment..." > "$STATUS_FILE"
 
 # 1. Setup Homebrew if missing
 if ! command -v brew >/dev/null 2>&1; then
     echo "Homebrew not found. Installing Homebrew..."
+    echo "Installing Homebrew..." > "$STATUS_FILE"
     NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     
     # Add Homebrew to PATH for the current session without using eval
@@ -35,12 +38,14 @@ fi
 # 2. Setup Python via Homebrew
 if ! brew list python@3 &>/dev/null && ! brew list python3 &>/dev/null && ! brew list python &>/dev/null; then
     echo "Python 3 not found. Installing via Homebrew..."
+    echo "Installing Python 3 via Homebrew..." > "$STATUS_FILE"
     # Disable auto-update just for this install to speed it up
     HOMEBREW_NO_AUTO_UPDATE=1 brew install python3
 else
     # Check if the installed brew python is older than 3.14 without hitting the network
     if ! "$(brew --prefix)/bin/python3" -c "import sys; sys.exit(0 if sys.version_info >= (3, 14) else 1)" 2>/dev/null; then
         echo "Installed Python is older than 3.14. Upgrading via Homebrew..."
+        echo "Upgrading Python via Homebrew..." > "$STATUS_FILE"
         brew upgrade python3
     fi
 fi
@@ -51,6 +56,7 @@ echo "Using Python: $("$PYTHON_CMD" --version)"
 # 3. Create venv if it doesn't exist
 if [ ! -d "venv" ]; then
     echo "Virtual environment not found. Creating venv..."
+    echo "Creating virtual environment..." > "$STATUS_FILE"
     "$PYTHON_CMD" -m venv venv
     if [ $? -ne 0 ]; then
         echo "Error: Failed to create venv. Please make sure python3 is installed."
@@ -69,6 +75,7 @@ if [ -f "requirements.txt" ]; then
 
     if [ ! -f "$REQ_HASH_FILE" ] || [ "$REQ_HASH" != "$(cat "$REQ_HASH_FILE")" ]; then
         echo "Requirements changed. Installing/updating..."
+        echo "Installing Python packages (this may take a few minutes)..." > "$STATUS_FILE"
         ./venv/bin/pip install -r requirements.txt
         if [ $? -ne 0 ]; then
             echo "Error: Failed to install requirements."
@@ -109,6 +116,7 @@ if [ "$NEED_INIT" = true ]; then
     echo "$CURRENT_HASH" > "$HASH_FILE"
 fi
 
+echo "Starting server and loading model..." > "$STATUS_FILE"
 nohup ./venv/bin/python3 server.py > "$LOG_FILE" 2>&1 &
 NEW_PID="$!"
 echo "$NEW_PID" > "$PID_FILE"
@@ -152,6 +160,7 @@ else
     else
         echo "✅ Server is ready!"
     fi
+    echo "Ready" > "$STATUS_FILE"
 fi
 
 echo ""
