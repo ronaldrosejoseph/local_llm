@@ -787,6 +787,7 @@ pre[class*="language-"] {
 .message-content table {
     display: block;
     width: fit-content;
+    word-break: keep-all;
     overflow-x: scroll;
     border-collapse: collapse;
     margin: 14px 0;
