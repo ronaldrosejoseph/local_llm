@@ -51,7 +51,6 @@ def get_messages(chat_id: str):
 
 
 @router.post("/api/chats/{chat_id}/generate-title")
-@router.post("/api/chats/{chat_id}/generate-title")
 def generate_title_route(chat_id: str):
     """API endpoint to manually trigger title generation."""
     return internal_generate_title(chat_id)
@@ -165,7 +164,8 @@ def get_rag_status(chat_id: str):
             rag_meta["search_query"] = search_query
             return rag_meta
     
-    return {"offset": 0, "total": 0, "limit": 50, "search_mode": search_mode, "search_query": search_query}
+    limit = load_config().get("pdf_text_pages_per_batch", 50)
+    return {"offset": 0, "total": 0, "limit": limit, "search_mode": search_mode, "search_query": search_query}
 
 @router.put("/api/chats/{chat_id}/rag-status")
 def update_rag_status(chat_id: str, payload: dict):

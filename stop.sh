@@ -3,45 +3,53 @@
 # stop.sh - Stops the LLM server
 
 PID_FILE="server.pid"
+SERVER_RUNNING=false
+
+# Check if server is running BEFORE we start killing anything
+if [ -f "$PID_FILE" ]; then
+    PID=$(cat "$PID_FILE")
+    if [[ "$PID" =~ ^[0-9]+$ ]] && ps -p "$PID" > /dev/null 2>&1; then 
+        SERVER_RUNNING=true
+    fi
+fi
+if [ "$SERVER_RUNNING" = false ]; then
+    if lsof -t -i:8000 > /dev/null 2>&1; then SERVER_RUNNING=true; fi
+fi
+if [ "$SERVER_RUNNING" = false ]; then
+    if pgrep -f "python3 server.py" > /dev/null 2>&1; then SERVER_RUNNING=true; fi
+fi
 
 # 1. Try to stop via PID file first
 if [ -f "$PID_FILE" ]; then
     PID=$(cat "$PID_FILE")
-    # Validate that PID is a number before using it
     if [[ "$PID" =~ ^[0-9]+$ ]]; then
         echo "Stopping LLM server (PID: $PID)..."
         kill "$PID" 2>/dev/null
         
-        # Wait up to 5 seconds for it to die naturally
         for i in {1..5}; do
             if ! ps -p "$PID" > /dev/null; then break; fi
             echo "Waiting for server to stop..."
             sleep 1
         done
         
-        # Force kill if still alive
         if ps -p "$PID" > /dev/null; then
             echo "Server did not stop gracefully. Force killing (PID: $PID)..."
             kill -9 "$PID" 2>/dev/null
         fi
-    else
-        echo "Invalid PID in $PID_FILE: '$PID'. Skipping."
     fi
     rm "$PID_FILE"
 fi
 
-# 2. Aggressive Cleanup (The "Nuke" option)
-# Find any process listening on port 8000 and kill it
+# 2. Aggressive Cleanup
 PORT_PIDS=$(lsof -t -i:8000)
 if [ -n "$PORT_PIDS" ]; then
     echo "Cleaning up lingering processes on port 8000: $PORT_PIDS"
-    # Kill each PID found on that port
     for p in $PORT_PIDS; do
         kill -9 "$p" 2>/dev/null
     done
 fi
 
-# 3. Final cleanup of any stray server processes by name
+# 3. Final cleanup by name
 STRAY_PIDS=$(pgrep -f "python3 server.py")
 if [ -n "$STRAY_PIDS" ]; then
     echo "Cleaning up stray server processes: $STRAY_PIDS"
@@ -50,5 +58,9 @@ if [ -n "$STRAY_PIDS" ]; then
     done
 fi
 
-rm -f ".server_lifecycle"
-echo "✅ Environment is clean."
+if [ "$SERVER_RUNNING" = true ]; then
+    rm -f ".server_lifecycle"
+    echo "✅ Server stopped and environment is clean."
+else
+    echo "⚠️ Server was not running. Preserving .server_lifecycle for crash detection."
+fi
