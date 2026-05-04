@@ -25,6 +25,14 @@ def is_model_cached(model_name: str) -> bool:
     snapshots_dir = os.path.join(cache_dir, "snapshots")
     return os.path.isdir(snapshots_dir)
 
+def set_offline_mode(offline: bool):
+    os.environ["HF_HUB_OFFLINE"] = "1" if offline else "0"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1" if offline else "0"
+    try:
+        import huggingface_hub.constants as hfc
+        hfc.HF_HUB_OFFLINE = offline
+    except ImportError:
+        pass
 
 def load_active_model(override_name: str = None) -> tuple[bool, str]:
     """Loads the specified or default model. Returns (success, actual_model_name)."""
@@ -54,13 +62,11 @@ def load_active_model(override_name: str = None) -> tuple[bool, str]:
     use_local = is_model_cached(state.MODEL_NAME)
     if not use_local:
         # If not cached, we MUST allow networking to let it download if it fails over
-        os.environ["HF_HUB_OFFLINE"] = "0"
-        os.environ["TRANSFORMERS_OFFLINE"] = "0"
+        set_offline_mode(False)
         print(f"Enabling networking for {state.MODEL_NAME} (not cached)")
     else:
         # Ensure offline mode is enforced
-        os.environ["HF_HUB_OFFLINE"] = "1"
-        os.environ["TRANSFORMERS_OFFLINE"] = "1"
+        set_offline_mode(True)
 
     try:
         # Step 1: Attempt to load as a Vision model (VLM)
@@ -86,6 +92,30 @@ def load_active_model(override_name: str = None) -> tuple[bool, str]:
             # Step 3: Total Load Failure
             error_msg = str(e_lm)
             print(f"Error loading model {state.MODEL_NAME}: {error_msg}")
+
+            if "Cannot find an appropriate cached snapshot folder" in error_msg or "HF_HUB_OFFLINE" in error_msg:
+                print(f"Cached file missing for {state.MODEL_NAME}. Enabling network to download...")
+                set_offline_mode(False)
+                
+                try:
+                    try:
+                        state.model, state.processor = mlx_vlm.load(state.MODEL_NAME)
+                        state.tokenizer = state.processor.tokenizer
+                        state.vlm_config = load_vlm_config(state.MODEL_NAME)
+                        state.IS_VLM = True
+                        print(f"Model {state.MODEL_NAME} downloaded and loaded successfully as VLM.")
+                    except Exception:
+                        state.model, state.tokenizer = load(state.MODEL_NAME)
+                        state.processor = None
+                        state.vlm_config = None
+                        state.IS_VLM = False
+                        print(f"Model {state.MODEL_NAME} downloaded and loaded successfully as standard LLM.")
+                    
+                    set_offline_mode(True)
+                    return True, state.MODEL_NAME
+                except Exception as e_download:
+                    print(f"Error downloading model {state.MODEL_NAME}: {e_download}")
+                    set_offline_mode(True)
 
             # If the active model fails, try to load the default
             if state.MODEL_NAME != state.DEFAULT_MODEL:
