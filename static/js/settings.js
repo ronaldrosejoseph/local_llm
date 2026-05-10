@@ -4,6 +4,7 @@
 
 import { state, elements, API_URL } from './state.js';
 import { loadModels } from './models.js';
+import { showToast } from './toast.js';
 
 // --- Settings Modal ---
 
@@ -175,7 +176,7 @@ async function confirmDeleteModel(modelName, btn) {
         await loadModels();
         await loadSettingsModels();
     } catch (err) {
-        alert(`Failed to delete model: ${err.message}`);
+        showToast(`Failed to delete model: ${err.message}`, "error");
         btn.disabled = false;
         lucide.createIcons({ elements: [btn.querySelector('[data-lucide]')] });
     }

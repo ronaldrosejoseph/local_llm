@@ -6,6 +6,7 @@ import { state, elements, API_URL } from './state.js';
 import { renderMarkdown, scrollToBottom, highlightCode } from './utils.js';
 import { loadChatHistory } from './sidebar.js';
 import { speakResponse, stopSpeaking } from './speech.js';
+import { showToast } from './toast.js';
 
 // --- Send Message ---
 
@@ -24,7 +25,7 @@ export async function sendMessage(text = null) {
 
     // Check if we need to show the model switching state
     if (elements.sendBtn.disabled) {
-        alert("Please wait for the model to finish loading.");
+        showToast("Please wait for the model to finish loading.", "warning");
         return;
     }
 

@@ -73,6 +73,11 @@ server/services/       → Business logic (llm, rag, image_gen, memory, web_sear
 ### Global state
 All server modules import `server.state` and read/write module-level attributes directly (no getters/setters). The key variables are: `MODEL_NAME`, `model`, `tokenizer`, `processor`, `vlm_config`, `IS_VLM`, `generation_lock`, `document_store`, `rag_offsets`, `embedder_model`, `say_processes`.
 
+### Toast notifications
+- **Never** use native `alert()` in the frontend. Import `showToast` from `./toast.js` instead.
+- Signature: `showToast(message, type = 'info', duration = 5000)`. Types: `error`, `warning`, `success`, `info`.
+- It's also exposed on `window.showToast` for use from Swift bridge callbacks.
+
 ### Environment
 - `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1` are set at the top of `server.py` before any HF imports
 - Temporarily unset to `0` during model downloads (in `server/services/llm.py` and `server/routes/model_routes.py`)

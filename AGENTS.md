@@ -84,6 +84,7 @@
 | `static/js/documents.js` | File upload handler, attachment pill UI. |
 | `static/js/speech.js` | TTS (server API), speech-to-text (Web Speech API). |
 | `static/js/system_prompt.js` | System prompt management — per-chat persona/instruction editing. |
+| `static/js/toast.js` | Toast notification component — `showToast(msg, type, duration)`. Types: error/warning/success/info. Use this instead of native `alert()`. |
 | `static/uploads/` | Uploaded documents and images (runtime, gitignored). |
 | `static/images/` | Generated images from FLUX (runtime, gitignored). |
 

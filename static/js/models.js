@@ -4,6 +4,7 @@
 
 import { state, elements, API_URL } from './state.js';
 import { loadSettingsModels } from './settings.js';
+import { showToast } from './toast.js';
 
 // --- Load Models ---
 
@@ -36,7 +37,7 @@ export async function addNewModel() {
     if (!name) return;
 
     if (!name.includes('mlx-community')) {
-        alert("Model must be from the 'mlx-community' organization on Hugging Face.");
+        showToast("Model must be from the 'mlx-community' organization on Hugging Face.", "error");
         return;
     }
 
@@ -115,7 +116,7 @@ export async function addNewModel() {
         }
     } catch (error) {
         console.error('Error adding model:', error);
-        alert(`Failed to add model: ${error.message}`);
+        showToast(`Failed to add model: ${error.message}`, "error");
         progressContainer.style.display = 'none';
         addBtn.disabled = false;
         elements.newModelInput.disabled = false;
@@ -152,7 +153,7 @@ export async function switchModel(modelName) {
 
         if (!response.ok) {
             const data = await response.json().catch(() => ({}));
-            alert(data.detail || 'Error switching model');
+            showToast(data.detail || 'Error switching model', "error");
             setBadge(originalBadgeText, false);
             return;
         }
@@ -178,13 +179,13 @@ export async function switchModel(modelName) {
                         setBadge(data.message || 'Loading...');
                     } else if (data.status === 'ready') {
                         if (data.fallback) {
-                            alert(`Error loading model "${data.requested.split('/').pop()}": ${data.error}\n\nFalling back to default model: ${data.model}`);
+                            showToast(`Error loading model "${data.requested.split('/').pop()}": ${data.error}. Falling back to default model: ${data.model}`, "warning", 7000);
                         }
                         setBadge(data.model, false);
                         console.log(`Switched to ${data.full}`);
                         await loadModels();
                     } else if (data.status === 'error') {
-                        alert(data.message || 'Error loading model');
+                        showToast(data.message || 'Error loading model', "error");
                         setBadge(originalBadgeText, false);
                     }
                 } catch (_) { }

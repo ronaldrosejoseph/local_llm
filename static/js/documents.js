@@ -5,6 +5,7 @@
 import { state, elements, API_URL } from './state.js';
 import { appendMessage } from './chat.js';
 import { loadChatHistory, startNewChat } from './sidebar.js';
+import { showToast } from './toast.js';
 
 export function initDocumentUpload() {
     elements.attachBtn.addEventListener('click', () => {
@@ -63,7 +64,7 @@ export function initDocumentUpload() {
             }
         } catch (err) {
             elements.attachmentContainer.style.display = 'none';
-            alert('Error uploading document: ' + err.message);
+            showToast('Error uploading document: ' + err.message, "error");
         } finally {
             e.target.value = '';
         }

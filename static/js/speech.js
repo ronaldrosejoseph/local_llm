@@ -8,6 +8,7 @@
  */
 
 import { state, elements, API_URL } from './state.js';
+import { showToast } from './toast.js';
 
 // --- Text-to-Speech ---
 
@@ -60,7 +61,7 @@ function setupNativeSpeechBridge() {
     window._nativeSpeechError = (msg) => {
         console.error('Native speech error:', msg);
         stopRecording();
-        alert(msg);
+        showToast(msg, "error");
     };
 
     window._nativeSpeechEnded = () => {
@@ -140,7 +141,7 @@ export function toggleRecording() {
 
     // Fallback: Web Speech API
     if (!recognition) {
-        alert('Speech recognition is not supported in this browser.');
+        showToast('Speech recognition is not supported in this browser.', "warning");
         return;
     }
 

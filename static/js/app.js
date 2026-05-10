@@ -14,12 +14,14 @@ import { openSettings, closeSettings, loadConfig, initConfigSliders } from './se
 import { initDocumentUpload } from './documents.js';
 import { speakResponse, stopSpeaking, toggleRecording, initSpeechRecognition } from './speech.js';
 import { loadSystemPrompt, saveSystemPrompt, toggleSystemPrompt } from './system_prompt.js';
+import { showToast } from './toast.js';
 
 // --- Expose globals for inline onclick handlers in dynamically created HTML ---
 window.speakResponse = speakResponse;
 window.stopSpeaking = stopSpeaking;
 window.copyToClipboard = copyToClipboard;
 window.copyCode = copyCode;
+window.showToast = showToast;
 
 // --- Initialize ---
 
