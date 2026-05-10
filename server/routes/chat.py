@@ -3,6 +3,7 @@ Chat routes — CRUD for chats/messages and the main streaming generation endpoi
 """
 
 import os
+import sys
 import uuid
 import json
 import re
@@ -12,10 +13,6 @@ import threading
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
-from mlx_lm import stream_generate
-from mlx_lm.sample_utils import make_sampler, make_repetition_penalty
-from mlx_vlm.prompt_utils import apply_chat_template as apply_vlm_template
-from mlx_vlm import stream_generate as stream_vlm_generate
 from contextlib import closing
 from typing import Optional
 
@@ -27,6 +24,7 @@ from server.services.rag import get_embedder, build_rag_context, handle_vision_p
 from server.services.web_search import perform_web_search
 from server.services.image_gen import run_flux_pipeline, flux_sse_generator
 from server.services.memory import assemble_context, post_generation_tasks
+from server.services.model_manager import InferenceCrash
 
 router = APIRouter()
 
@@ -51,12 +49,12 @@ def get_messages(chat_id: str):
 
 
 @router.post("/api/chats/{chat_id}/generate-title")
-def generate_title_route(chat_id: str):
+async def generate_title_route(chat_id: str):
     """API endpoint to manually trigger title generation."""
-    return internal_generate_title(chat_id)
+    return await internal_generate_title(chat_id)
 
 
-def internal_generate_title(chat_id: str):
+async def internal_generate_title(chat_id: str):
     """
     Internal helper to summarize chat context into a title.
     Can be called by API routes or background memory tasks.
@@ -102,7 +100,7 @@ def internal_generate_title(chat_id: str):
     clean_text = clean_text.strip("[]\"' ")
 
     # 3. Handle model missing (Fallback path)
-    if not hasattr(state, "model") or state.model is None:
+    if state.model_manager is None or state.model_manager.model_name is None:
         if chat["title"] == "New Conversation" or chat["title_is_fallback"]:
             words = clean_text.split()
             fallback_title = " ".join(words[:5])
@@ -135,19 +133,14 @@ def internal_generate_title(chat_id: str):
             f"{clean_text}"
         )
         messages = [{"role": "user", "content": prompt_txt}]
-        
-        if state.IS_VLM:
-            from mlx_vlm import generate as generate_vlm
-            from mlx_vlm.prompt_utils import apply_chat_template as apply_vlm_template
-            prompt = apply_vlm_template(state.processor, state.vlm_config, messages, num_images=0)
-            result = generate_vlm(state.model, state.processor, prompt=prompt, max_tokens=12, verbose=False)
-        else:
-            from mlx_lm import generate
-            prompt = state.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-            result = generate(state.model, state.tokenizer, prompt=prompt, max_tokens=12, verbose=False)
-            
-        text_result = result if isinstance(result, str) else getattr(result, "text", str(result))
-        title = text_result.strip().strip('"').strip("'")
+
+        result = await state.model_manager.nonstream_generate(
+            messages=messages,
+            is_vlm=state.model_manager.is_vlm,
+            max_tokens=12,
+        )
+
+        title = result.strip().strip('"').strip("'") if result else ""
         
         with closing(get_db_connection()) as conn:
             conn.execute("UPDATE chats SET title = ?, title_is_fallback = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (title, chat_id))
@@ -409,8 +402,6 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
         web_context=web_context,
     )
 
-    prompt = state.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-
     async def event_generator():
         # --- Concurrency: acquire generation lock ---
         if not state.generation_lock.acquire(blocking=False):
@@ -428,56 +419,37 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
         try:
             cfg = load_config()
 
-            if state.IS_VLM:
-                # --- VLM Branch ---
-                # Check for images in document_store
-                image_paths = []
+            # Collect VLM image paths if applicable
+            image_paths = None
+            if state.model_manager and state.model_manager.is_vlm:
                 if chat_id in state.document_store:
                     all_images = [d["path"] for d in state.document_store[chat_id] if d.get("type") == "image"]
-                    # If we found images, we apply pagination windowing (5 images at a time)
                     if all_images:
                         offset = state.rag_offsets.get(chat_id, 0)
                         limit = cfg.get("pdf_image_pages_per_batch", 5)
                         if offset >= len(all_images):
                             offset = 0
                         image_paths = all_images[offset: offset + limit]
-                        print(f"VLM: Sending {len(image_paths)} images (offset {offset}) to model.")
 
-                # VLM prompt formatting needs the MESSAGES list, not the pre-templated string
-                formatted_prompt = apply_vlm_template(
-                    state.processor,
-                    state.vlm_config,  # Use the cached config
-                    messages,  # Use the assembled messages list
-                    num_images=len(image_paths)
-                )
+            async for token in state.model_manager.stream_generate(
+                messages=messages,
+                is_vlm=state.model_manager.is_vlm,
+                image_paths=image_paths,
+                max_tokens=cfg["max_tokens"],
+                temperature=cfg["temperature"],
+                top_p=cfg["top_p"],
+                repetition_penalty=cfg["repetition_penalty"],
+            ):
+                full_response += token
+                yield f"data: {json.dumps({'content': token})}\n\n"
+                await asyncio.sleep(0)
 
-                for response in stream_vlm_generate(
-                    state.model,
-                    state.processor,
-                    prompt=formatted_prompt,
-                    image=image_paths if image_paths else None,
-                    max_tokens=cfg["max_tokens"],
-                    temperature=cfg["temperature"],
-                ):
-                    full_response += response.text
-                    yield f"data: {json.dumps({'content': response.text})}\n\n"
-                    await asyncio.sleep(0)
-            else:
-                # --- standard LLM Branch ---
-                sampler = make_sampler(temp=cfg["temperature"], top_p=cfg["top_p"])
-                logits_processors = [
-                    make_repetition_penalty(penalty=cfg["repetition_penalty"])
-                ] if cfg["repetition_penalty"] > 1.0 else None
-                for response in stream_generate(
-                    state.model, state.tokenizer,
-                    prompt=prompt,
-                    max_tokens=cfg["max_tokens"],
-                    sampler=sampler,
-                    logits_processors=logits_processors,
-                ):
-                    full_response += response.text
-                    yield f"data: {json.dumps({'content': response.text})}\n\n"
-                    await asyncio.sleep(0)  # Yield control
+        except InferenceCrash:
+            print(f"Chat generation for {chat_id}: model worker crashed", file=sys.stderr)
+            # Fallback to default model
+            fallback_display = state.DEFAULT_MODEL.split("/")[-1]
+            yield f"data: {json.dumps({'model_crash': True, 'fallback_model': state.DEFAULT_MODEL, 'fallback_model_display': fallback_display})}\n\n"
+            yield f"data: {json.dumps({'error': 'Model process crashed. Falling back to a smaller model. Please try again.'})}\n\n"
 
         except asyncio.CancelledError:
             print(f"Chat generation for {chat_id} was cancelled by client.")

@@ -58,6 +58,22 @@ if [ -n "$STRAY_PIDS" ]; then
     done
 fi
 
+# 4. Clean up model worker child processes
+WORKER_PIDS=$(pgrep -f "worker.py" 2>/dev/null)
+if [ -n "$WORKER_PIDS" ]; then
+    echo "Cleaning up worker processes: $WORKER_PIDS"
+    for p in $WORKER_PIDS; do
+        kill "$p" 2>/dev/null
+    done
+    sleep 1
+    for p in $WORKER_PIDS; do
+        if ps -p "$p" > /dev/null 2>&1; then
+            kill -9 "$p" 2>/dev/null
+        fi
+    done
+fi
+rm -f "worker.pid"
+
 if [ "$SERVER_RUNNING" = true ]; then
     rm -f ".server_lifecycle"
     echo "✅ Server stopped and environment is clean."

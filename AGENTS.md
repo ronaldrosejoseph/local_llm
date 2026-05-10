@@ -52,12 +52,14 @@
 |------|---------|
 | `server.py` | **Entry point** — sets HF offline env vars, imports app from server package, runs uvicorn. ~15 lines. |
 | `server/__init__.py` | Package marker. |
-| `server/app.py` | FastAPI app creation, router includes, static file mount, startup model load. |
-| `server/state.py` | All global mutable state: model, tokenizer, processor, document_store, etc. |
+| `server/app.py` | FastAPI app creation, router includes, static file mount, ModelManager init, shutdown handler. |
+| `server/state.py` | All global mutable state: MODEL_NAME, model_manager (ModelManager), document_store, generation_lock, etc. |
 | `server/config.py` | Config load/save from `config.json` with defaults. |
 | `server/db.py` | SQLite connection helper. |
 | `server/models.py` | Pydantic request/response models (Message, ChatCreate, ConfigUpdate, etc.). |
-| `server/services/llm.py` | Model loading (VLM-first, LLM fallback), VRAM cleanup, cache detection. |
+| `server/services/llm.py` | Cache helpers: `is_model_cached()`, `set_offline_mode()`. |
+| `server/services/worker.py` | **Child process** — standalone script that loads MLX models and runs generation. Communicates with parent via JSON-line stdin/stdout protocol. |
+| `server/services/model_manager.py` | **ModelManager** — parent-side process manager. Spawns/manages worker, proxies generation commands, health checks, crash recovery. |
 | `server/services/rag.py` | Embedder loading, PDF-to-image, document chunking, semantic retrieval, vision PDF pagination. |
 | `server/services/image_gen.py` | Shared FLUX pipeline for `/imagine` and `/edit` (deduplicated). |
 | `server/services/memory.py` | Hybrid memory system: token-aware rolling window, progressive summarization, cross-chat vector retrieval. |
@@ -194,11 +196,7 @@ These module-level variables are the core runtime state. All modules import `ser
 
 ```python
 MODEL_NAME = None          # Current model's HF repo ID (e.g. "mlx-community/gemma-4-e2b-it-4bit")
-model = None               # Loaded MLX model object
-tokenizer = None           # Loaded tokenizer
-processor = None           # VLM processor (None for text-only models)
-vlm_config = None          # Cached VLM config dict
-IS_VLM = False             # True if current model is a Vision model
+model_manager = None       # ModelManager instance (manages child worker process)
 generation_lock = threading.Lock() # Protects model access across threads
 
 document_store = {}        # chat_id -> [{type, text, emb, ...}]  (lazy-loaded from SQLite)
@@ -206,6 +204,8 @@ rag_offsets = {}           # chat_id -> int offset for pagination
 embedder_model = None      # SentenceTransformer instance (lazy loaded)
 say_processes = set()      # Tracked subprocess.Popen objects for TTS
 ```
+
+The actual MLX model objects (`model`, `tokenizer`, `processor`, `vlm_config`, `IS_VLM`) live in the child worker process (`server/services/worker.py`). The parent accesses them indirectly through `state.model_manager` which proxies generation commands.
 
 ---
 

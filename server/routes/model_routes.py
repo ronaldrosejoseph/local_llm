@@ -18,7 +18,7 @@ from huggingface_hub import HfApi
 from server import state
 from server.db import get_db_connection
 from server.models import ModelAdd
-from server.services.llm import load_active_model, is_model_cached
+from server.services.llm import is_model_cached
 
 router = APIRouter()
 
@@ -154,14 +154,15 @@ async def set_active_model(model_data: ModelAdd):
         # Acquire generation lock to prevent model switch during active generation
         state.generation_lock.acquire()
         try:
-            # Update DB active flag optimistically (load_active_model will correct it on failure)
+            # Update DB active flag optimistically
             with closing(get_db_connection()) as conn:
                 conn.execute("UPDATE models SET active = 0")
                 conn.execute("UPDATE models SET active = 1 WHERE name = ?", (model_data.name,))
                 conn.commit()
 
-            # Use the centralized helper to handle VLM vs LLM and global state
-            success, actual_name = load_active_model(override_name=model_data.name)
+            # Load model in child process via sync wrapper
+            success, actual_name = state.model_manager.sync_load_model(model_data.name)
+            state.MODEL_NAME = actual_name
 
             payload = {
                 "status": "ready",

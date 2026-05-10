@@ -6,6 +6,7 @@ import { state, elements, API_URL } from './state.js';
 import { renderMarkdown, scrollToBottom, highlightCode } from './utils.js';
 import { loadChatHistory } from './sidebar.js';
 import { speakResponse, stopSpeaking } from './speech.js';
+import { loadModels } from './models.js';
 import { showToast } from './toast.js';
 
 // --- Send Message ---
@@ -123,6 +124,15 @@ export async function sendMessage(text = null) {
                             }
                             elements.modelBadge.style.opacity = '1';
                             elements.modelBadge.style.fontStyle = 'normal';
+                        }
+
+                        if (data.model_crash) {
+                            showToast(`Model process crashed. Falling back to ${data.fallback_model_display}.`, "warning", 8000);
+                            elements.modelBadge.textContent = data.fallback_model_display;
+                            elements.modelBadge.style.opacity = '1';
+                            elements.modelBadge.style.fontStyle = 'normal';
+                            loadModels();
+                            continue;
                         }
 
                         if (data.chat_id && !requestChatId) {

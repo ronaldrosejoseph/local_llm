@@ -83,7 +83,7 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
                         text += extracted + "\n"
             else:
                 # SCANNED/IMAGE PDF: Use Vision model if active
-                if state.IS_VLM:
+                if state.model_manager and state.model_manager.is_vlm:
                     print("No digital text found (scanned): converting PDF to images via fitz...")
 
                     # Save PDF for on-demand extraction of further pages

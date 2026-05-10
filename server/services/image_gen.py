@@ -13,13 +13,11 @@ import asyncio
 import threading
 import uuid
 
-import mlx.core as mx
 from contextlib import closing
 
 from server import state
 from server.config import load_config
 from server.db import get_db_connection
-from server.services.llm import load_active_model
 
 
 def run_flux_pipeline(prompt: str, chat_id: str, q: queue.Queue, img_name: str,
@@ -41,11 +39,9 @@ def run_flux_pipeline(prompt: str, chat_id: str, q: queue.Queue, img_name: str,
         from mflux.callbacks.callback import InLoopCallback
         import time
 
-        # Unload LLM to free VRAM for FLUX
-        state.model = None
-        state.tokenizer = None
-        gc.collect()
-        mx.clear_cache()
+        # Unload LLM from child process to free VRAM for FLUX
+        if state.model_manager:
+            state.model_manager.sync_unload_model()
 
         os.makedirs("static/images", exist_ok=True)
 
@@ -89,7 +85,11 @@ def run_flux_pipeline(prompt: str, chat_id: str, q: queue.Queue, img_name: str,
 
         del flux
         gc.collect()
-        mx.clear_cache()
+        try:
+            import mlx.core as mx
+            mx.clear_cache()
+        except Exception:
+            pass
 
         markdown_img = f"![{prompt}](/images/{img_name})\n"
         assistant_full_reply = f"{result_message}\n\n{markdown_img}"
@@ -104,10 +104,12 @@ def run_flux_pipeline(prompt: str, chat_id: str, q: queue.Queue, img_name: str,
     except Exception as e:
         q.put({"error": str(e)})
     finally:
-        # ALWAYS reload the LLM, even if FLUX crashed
+        # ALWAYS reload the LLM in the child process, even if FLUX crashed
         try:
             q.put({"model_badge": "Reloading LLM...", "model_badge_pulse": True})
-            load_active_model()
+            if state.model_manager and state.MODEL_NAME:
+                success, name = state.model_manager.sync_load_model(state.MODEL_NAME)
+                state.MODEL_NAME = name
         except Exception as reload_err:
             print(f"CRITICAL: Failed to reload LLM after FLUX: {reload_err}")
         q.put({"model_badge_restore": True})

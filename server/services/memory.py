@@ -26,17 +26,11 @@ from server.services.rag import get_embedder
 # ---------------------------------------------------------------------------
 
 def count_tokens(text: str) -> int:
-    """Count tokens using the currently loaded tokenizer.
-    
-    Falls back to a word-based heuristic (~1.3 tokens/word) when the
-    tokenizer is unavailable.
+    """Count tokens using a word-based heuristic (~1.3 tokens/word).
+
+    The tokenizer lives in the child worker process, so we always use
+    the heuristic. This is accurate enough for context window budgeting.
     """
-    if state.tokenizer is not None:
-        try:
-            return len(state.tokenizer.encode(text))
-        except Exception:
-            pass
-    # Rough heuristic fallback
     return int(len(text.split()) * 1.3)
 
 
@@ -153,68 +147,12 @@ def assemble_context(chat_id: str, current_message: str, system_prompt: str,
 
 def _get_model_context_length() -> int:
     """Get the current model's context window size.
-    
-    Checks the model config for max_position_embeddings or similar fields,
-    including nested configs (e.g. text_config for VLM models like Gemma 4).
-    Also checks the tokenizer's model_max_length as a fallback.
-    Falls back to 131072 if nothing is detected (safe for modern models).
+
+    Reads the cached context_length from the ModelManager (set when the
+    child worker reports back after loading a model).
     """
-    context_keys = ["max_position_embeddings", "max_seq_len", "context_length",
-                    "max_sequence_length", "n_positions", "seq_length"]
-    # Sub-configs that may hold context length for VLM/multimodal models
-    nested_keys = ["text_config", "language_config", "llm_config"]
-
-    def _search_config(config_obj, prefix=""):
-        """Search a config object (dataclass or dict) for context length keys."""
-        if config_obj is None:
-            return None
-
-        for key in context_keys:
-            # Attribute access (dataclass / namespace)
-            val = getattr(config_obj, key, None)
-            if val and isinstance(val, int) and val > 0:
-                print(f"Memory: Detected context window = {val} (from {prefix}{key})")
-                return val
-            # Dict access
-            if isinstance(config_obj, dict) and key in config_obj:
-                val = config_obj[key]
-                if val and isinstance(val, int) and val > 0:
-                    print(f"Memory: Detected context window = {val} (from {prefix}{key})")
-                    return val
-
-        # Recurse into nested sub-configs (e.g. text_config for VLMs)
-        for nk in nested_keys:
-            sub = getattr(config_obj, nk, None)
-            if sub is None and isinstance(config_obj, dict):
-                sub = config_obj.get(nk)
-            if sub is not None:
-                result = _search_config(sub, prefix=f"{prefix}{nk}.")
-                if result:
-                    return result
-        return None
-
-    try:
-        if state.model is not None:
-            # Check model.config, model.args, and model.config.text_config etc.
-            for attr in ["config", "args"]:
-                config_obj = getattr(state.model, attr, None)
-                if config_obj is not None:
-                    result = _search_config(config_obj, prefix=f"model.{attr}.")
-                    if result:
-                        return result
-
-        # Fallback: check the tokenizer's advertised max length
-        if state.tokenizer is not None:
-            tok_max = getattr(state.tokenizer, "model_max_length", None)
-            if tok_max and isinstance(tok_max, int) and 1024 < tok_max < 10_000_000:
-                print(f"Memory: Detected context window = {tok_max} (from tokenizer.model_max_length)")
-                return tok_max
-
-    except Exception as e:
-        print(f"Memory: Could not detect context length: {e}")
-
-    # Modern models typically support large context windows
-    print("Memory: Using default context window = 8192")
+    if state.model_manager is not None and state.model_manager.context_length:
+        return state.model_manager.context_length
     return 8192
 
 
@@ -372,29 +310,21 @@ def maybe_update_summary(chat_id: str):
     try:
         summary_messages = [{"role": "user", "content": summary_prompt}]
 
-        if state.IS_VLM:
-            from mlx_vlm import generate as generate_vlm
-            from mlx_vlm.prompt_utils import apply_chat_template as apply_vlm_template
+        if state.model_manager is None:
+            print("Memory: No model manager available, skipping summarization")
+            return
 
-            prompt = apply_vlm_template(
-                state.processor, state.vlm_config, summary_messages, num_images=0
-            )
-            result = generate_vlm(
-                state.model, state.processor,
-                prompt=prompt, max_tokens=300, verbose=False
-            )
-        else:
-            from mlx_lm import generate
-            prompt = state.tokenizer.apply_chat_template(
-                summary_messages, tokenize=False, add_generation_prompt=True
-            )
-            result = generate(
-                state.model, state.tokenizer,
-                prompt=prompt, max_tokens=300, verbose=False
-            )
+        result = state.model_manager.sync_nonstream_generate(
+            messages=summary_messages,
+            is_vlm=state.model_manager.is_vlm,
+            max_tokens=300,
+        )
 
-        new_summary = result if isinstance(result, str) else getattr(result, "text", str(result))
-        new_summary = new_summary.strip()
+        if not result:
+            print("Memory: Summarization returned empty result")
+            return
+
+        new_summary = result.strip()
 
         # Persist the updated summary and watermark
         new_watermark = unsummarized[-1]["id"]
