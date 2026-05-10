@@ -31,13 +31,22 @@ import os
 import gc
 import json
 import traceback
+import warnings
+import logging
 
-# Ensure stdout is line-buffered so the parent sees responses immediately
-sys.stdout.reconfigure(line_buffering=True)
-
-# Silence HF / MLX diagnostic chatter on stdout — redirect to stderr
+# Silence HF env vars before any library imports
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
+# ── Prevent library diagnostic output from contaminating the IPC channel ──
+# Save the real stdout fd for IPC responses, then redirect Python's stdout
+# to stderr so that mlx warnings / prints go to stderr instead.
+_ipc_out = os.fdopen(os.dup(1), "w", buffering=1)  # line-buffered for IPC
+
+# Redirect all diagnostic output to stderr
+sys.stdout = sys.stderr
+warnings.filterwarnings("always")
+logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
 
 # --- Global model state ---
 _model = None
@@ -53,9 +62,9 @@ _model_name = None
 # ---------------------------------------------------------------------------
 
 def _respond(data: dict):
-    """Write a single JSON object to stdout."""
-    sys.stdout.write(json.dumps(data) + "\n")
-    sys.stdout.flush()
+    """Write a single JSON object to the IPC channel (real stdout)."""
+    _ipc_out.write(json.dumps(data) + "\n")
+    _ipc_out.flush()
 
 
 def _error(request_id: str, message: str):

@@ -6,7 +6,6 @@ import { state, elements, API_URL } from './state.js';
 import { renderMarkdown, scrollToBottom, highlightCode } from './utils.js';
 import { loadChatHistory } from './sidebar.js';
 import { speakResponse, stopSpeaking } from './speech.js';
-import { loadModels } from './models.js';
 import { showToast } from './toast.js';
 
 // --- Send Message ---
@@ -128,11 +127,25 @@ export async function sendMessage(text = null) {
 
                         if (data.model_crash) {
                             showToast(`Model process crashed. Falling back to ${data.fallback_model_display}.`, "warning", 8000);
+                            // Update badge from SSE data (always correct)
                             elements.modelBadge.textContent = data.fallback_model_display;
                             elements.modelBadge.style.opacity = '1';
                             elements.modelBadge.style.fontStyle = 'normal';
-                            loadModels();
-                            continue;
+                            // Update select dropdown to show fallback model as selected
+                            const fallbackFull = data.fallback_model;
+                            let found = false;
+                            for (const opt of elements.modelSelect.options) {
+                                opt.selected = (opt.value === fallbackFull);
+                                if (opt.value === fallbackFull) found = true;
+                            }
+                            // If fallback not in dropdown, add it
+                            if (!found && fallbackFull) {
+                                const opt = document.createElement('option');
+                                opt.value = fallbackFull;
+                                opt.textContent = data.fallback_model_display;
+                                opt.selected = true;
+                                elements.modelSelect.appendChild(opt);
+                            }
                         }
 
                         if (data.chat_id && !requestChatId) {
@@ -240,7 +253,7 @@ export async function sendMessage(text = null) {
         const userMsgCount = elements.messagesContainer.querySelectorAll('.message.user').length;
         const isFirstTurn = isNewChat || elements.currentChatTitle.textContent === "New Conversation";
         const shouldRefine = isFirstTurn || (userMsgCount > 1 && userMsgCount % 3 === 0);
-        
+
         if (shouldRefine && state.currentChatId === requestChatId && fullContent.trim().length > 0) {
             fetch(`${API_URL}/api/chats/${requestChatId}/generate-title`, { method: 'POST' })
                 .then(res => res.json())
@@ -310,7 +323,7 @@ export function updateRagStatusUI(rs) {
         if (rs.total > 0) {
             // Only show slider if there's more than one batch to navigate
             slider.style.display = rs.total <= rs.limit ? 'none' : 'block';
-            
+
             slider.min = 0;
             // Fix: Calculate max to be exactly the last valid step start
             slider.max = Math.floor((rs.total - 1) / rs.limit) * rs.limit;
@@ -324,7 +337,7 @@ export function updateRagStatusUI(rs) {
             } else if (rs.is_vision) {
                 prefix = "Pages: ";
             }
-            
+
             textEl.textContent = `${prefix}${rs.offset + 1}-${end} / ${rs.total}`;
             container.style.display = 'flex';
 

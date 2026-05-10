@@ -191,10 +191,9 @@ class ModelManager:
             t = resp.get("type")
             if t == "token":
                 yield resp.get("content", "")
-            elif t == "error":
-                yield resp.get("message", "Unknown error")
             elif t == "done":
                 return
+            # error types are now raised as InferenceCrash inside _read_responses
 
     async def nonstream_generate(self, messages: list, is_vlm: bool = False,
                                  max_tokens: int = 300, temperature: float = 0.3,
@@ -315,17 +314,37 @@ class ModelManager:
         """Async generator that yields responses for a given request_id.
 
         The background reader task puts responses into self._pending[request_id].
-        When it sees 'done' or 'error', it signals completion.
+        Also proactively checks worker process health on every iteration so
+        an OOM kill is detected even if the reader task hasn't run yet.
+        Has a hard 10-minute total timeout to prevent infinite blocking.
         """
+        import time
         q: asyncio.Queue = asyncio.Queue()
         self._pending[request_id] = q
+        started = time.monotonic()
+        _MAX_WAIT = 600  # 10 minutes max total wait
 
         try:
             while True:
-                resp = await q.get()
+                # Hard timeout — don't block forever
+                if time.monotonic() - started > _MAX_WAIT:
+                    raise InferenceCrash("Generation timed out — worker unresponsive")
+
+                # Check worker health before each blocking wait
+                if self.process is None or self.process.poll() is not None:
+                    raise InferenceCrash("Model process terminated unexpectedly")
+
+                # Wait for a response (with periodic health re-check)
+                try:
+                    resp = await asyncio.wait_for(q.get(), timeout=0.5)
+                except asyncio.TimeoutError:
+                    continue  # re-check health at top of loop
+
                 yield resp
                 t = resp.get("type", "")
-                if t in ("done", "error"):
+                if t == "error":
+                    raise InferenceCrash(resp.get("message", "Worker process error"))
+                if t == "done":
                     return
         except asyncio.CancelledError:
             raise
@@ -389,16 +408,7 @@ class ModelManager:
         print(f"ModelManager: worker exited with code={exit_code}", file=sys.stderr)
 
         # Push error to all pending request queues
-        for rid, q in list(self._pending.items()):
-            try:
-                q.put_nowait({"request_id": rid, "type": "error",
-                               "message": "Model process crashed (OOM or unexpected error)"})
-            except asyncio.QueueFull:
-                pass
-            try:
-                q.put_nowait({"request_id": rid, "type": "done"})
-            except asyncio.QueueFull:
-                pass
+        _notify_pending_crash(self._pending)
 
         # Trigger crash recovery
         await self._crash_recovery()
@@ -416,16 +426,14 @@ class ModelManager:
                 pass
         self.process = None
 
-        # Clear pending queues
-        self._pending.clear()
-
-        # Cancel reader (will restart)
-        if self._reader_task:
-            self._reader_task.cancel()
-            try:
-                await self._reader_task
-            except asyncio.CancelledError:
-                pass
+        # Cancel reader task if it's still running (but not if we ARE the reader)
+        if self._reader_task is not None:
+            if self._reader_task is not asyncio.current_task() and not self._reader_task.done():
+                self._reader_task.cancel()
+                try:
+                    await self._reader_task
+                except asyncio.CancelledError:
+                    pass
             self._reader_task = None
 
         # Kill any leftover orphans
@@ -473,10 +481,13 @@ class ModelManager:
                     self._ping_fail_count += 1
                     if self._ping_fail_count >= 2:
                         print("ModelManager: health check failed twice, triggering recovery", file=sys.stderr)
+                        # Notify all pending generators before recovery
+                        _notify_pending_crash(self._pending)
                         await self._crash_recovery()
             except Exception:
                 self._ping_fail_count += 1
                 if self._ping_fail_count >= 2:
+                    _notify_pending_crash(self._pending)
                     await self._crash_recovery()
 
             await asyncio.sleep(10)
@@ -500,6 +511,24 @@ class ModelManager:
         except (asyncio.TimeoutError, Exception):
             return False
         return False
+
+
+# ------------------------------------------------------------------
+# Helper
+# ------------------------------------------------------------------
+
+def _notify_pending_crash(pending: dict):
+    """Push error+done to every pending request queue so generators wake up."""
+    for rid, q in list(pending.items()):
+        try:
+            q.put_nowait({"request_id": rid, "type": "error",
+                           "message": "Model process crashed (OOM or unexpected error)"})
+        except asyncio.QueueFull:
+            pass
+        try:
+            q.put_nowait({"request_id": rid, "type": "done"})
+        except asyncio.QueueFull:
+            pass
 
 
 # ------------------------------------------------------------------
