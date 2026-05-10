@@ -119,7 +119,21 @@ def internal_generate_title(chat_id: str):
         return {"error": "Model busy"}
         
     try:
-        prompt_txt = f"Summarize this prompt strictly into a title with exactly 2 to 5 words. Do not use quotes or punctuation at the end:\n\n{clean_text}"
+        prompt_txt = (
+            "Summarize the text strictly into a title of exactly 2–5 words.\n"
+            "Output plain text only.\n"
+            "Do NOT use:\n"
+            "- asterisks\n"
+            "- markdown\n"
+            "- quotes\n"
+            "- emojis\n"
+            "- brackets\n"
+            "- colons\n"
+            "- punctuation of any kind\n"
+            "- prefixes like 'Title' or 'Summary'\n"
+            "Return ONLY the 2–5 word title with no extra text.\n\n"
+            f"{clean_text}"
+        )
         messages = [{"role": "user", "content": prompt_txt}]
         
         if state.IS_VLM:
