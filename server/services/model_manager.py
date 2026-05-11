@@ -469,8 +469,14 @@ class ModelManager:
     # ------------------------------------------------------------------
 
     async def _health_loop(self):
-        """Periodically ping the child process."""
-        await asyncio.sleep(10)  # initial delay
+        """Periodically ping the child process.
+
+        Pings are skipped during active generation (the serial stdin/stdout
+        channel can't handle concurrent commands). The generation itself has
+        its own timeout via _read_responses. Recovery triggers only after 3
+        consecutive ping failures when idle (no pending generation).
+        """
+        await asyncio.sleep(15)  # initial delay
 
         while not self._shutting_down:
             try:
@@ -479,23 +485,33 @@ class ModelManager:
                     self._ping_fail_count = 0
                 else:
                     self._ping_fail_count += 1
-                    if self._ping_fail_count >= 2:
-                        print("ModelManager: health check failed twice, triggering recovery", file=sys.stderr)
-                        # Notify all pending generators before recovery
+                    if self._ping_fail_count >= 3:
+                        print("ModelManager: health check failed 3 times, triggering recovery", file=sys.stderr)
                         _notify_pending_crash(self._pending)
                         await self._crash_recovery()
             except Exception:
                 self._ping_fail_count += 1
-                if self._ping_fail_count >= 2:
+                if self._ping_fail_count >= 3:
                     _notify_pending_crash(self._pending)
                     await self._crash_recovery()
 
-            await asyncio.sleep(10)
+            await asyncio.sleep(15)
 
     async def _ping(self) -> bool:
-        """Send ping and wait for pong. Returns True if child is healthy."""
+        """Send ping and wait for pong. Returns True if child is healthy.
+
+        Skips the ping when generation is active (pending requests present)
+        because the serial stdin/stdout protocol means the worker cannot
+        respond to new commands while streaming tokens. The generation
+        itself has its own timeout and health checks in _read_responses.
+        """
         if self.process is None or self.process.poll() is not None:
             return False
+
+        # Skip ping during active generation — the worker is busy streaming
+        # and cannot process a concurrent command on the serial channel.
+        if self._pending:
+            return True
 
         cmd = {"command": "ping", "request_id": str(uuid.uuid4())}
         try:

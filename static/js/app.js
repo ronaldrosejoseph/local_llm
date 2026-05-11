@@ -13,7 +13,7 @@ import { loadModels, addNewModel, switchModel } from './models.js';
 import { openSettings, closeSettings, loadConfig, initConfigSliders } from './settings.js';
 import { initDocumentUpload } from './documents.js';
 import { speakResponse, stopSpeaking, toggleRecording, initSpeechRecognition } from './speech.js';
-import { loadSystemPrompt, saveSystemPrompt, toggleSystemPrompt } from './system_prompt.js';
+import { loadSystemPrompt, saveSystemPrompt, toggleSystemPrompt, initSystemPromptSearch } from './system_prompt.js';
 import { showToast } from './toast.js';
 
 // --- Expose globals for inline onclick handlers in dynamically created HTML ---
@@ -181,3 +181,4 @@ initScrollTracking();
 initConfigSliders();
 initDocumentUpload();
 initSpeechRecognition();
+initSystemPromptSearch();

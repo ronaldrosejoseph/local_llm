@@ -34,7 +34,7 @@ server/state.py        → All global mutable state (MODEL_NAME, model_manager, 
 server/config.py       → Read/write config.json
 server/db.py           → SQLite connection helper
 server/models.py       → Pydantic request/response models
-server/routes/         → API route handlers (chat, models, documents, config, speech)
+server/routes/         → API route handlers (chat, models, documents, config, speech, system_prompts)
 server/services/       → Business logic
     worker.py          → Child process: loads MLX models, handles generation via stdin/stdout JSON protocol
     model_manager.py   → Parent-side manager: spawns/manages worker, proxies commands, crash recovery

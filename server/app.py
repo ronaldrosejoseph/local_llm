@@ -15,6 +15,7 @@ from server.routes.model_routes import router as model_router
 from server.routes.documents import router as documents_router
 from server.routes.config_routes import router as config_router
 from server.routes.speech import router as speech_router
+from server.routes.system_prompt_routes import router as system_prompt_router
 
 app = FastAPI()
 
@@ -24,6 +25,7 @@ app.include_router(model_router)
 app.include_router(documents_router)
 app.include_router(config_router)
 app.include_router(speech_router)
+app.include_router(system_prompt_router)
 
 # Server Lifecycle Check (Crash Recovery)
 LIFECYCLE_FILE = ".server_lifecycle"

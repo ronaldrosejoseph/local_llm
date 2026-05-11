@@ -49,6 +49,9 @@ export const elements = {
     systemPromptPanel: document.getElementById('system-prompt-panel'),
     systemPromptSave: document.getElementById('system-prompt-save'),
     systemPromptInput: document.getElementById('system-prompt-input'),
+    systemPromptSearch: document.getElementById('system-prompt-search'),
+    systemPromptSearchResults: document.getElementById('system-prompt-search-results'),
+    systemPromptTemplateSave: document.getElementById('system-prompt-template-save'),
 };
 
 export { API_URL };

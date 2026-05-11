@@ -69,6 +69,7 @@
 | `server/routes/documents.py` | Document/image upload for RAG. |
 | `server/routes/config_routes.py` | Generation config GET/PATCH. |
 | `server/routes/speech.py` | TTS via macOS `say` command. |
+| `server/routes/system_prompt_routes.py` | System prompt template CRUD: search, save, update, delete reusable personas. |
 
 ### Frontend
 
@@ -85,7 +86,7 @@
 | `static/js/settings.js` | Settings modal, config sliders, model library UI. |
 | `static/js/documents.js` | File upload handler, attachment pill UI. |
 | `static/js/speech.js` | TTS (server API), speech-to-text (Web Speech API). |
-| `static/js/system_prompt.js` | System prompt management — per-chat persona/instruction editing. |
+| `static/js/system_prompt.js` | System prompt management — per-chat editing, template search, save/load/delete reusable personas. |
 | `static/js/toast.js` | Toast notification component — `showToast(msg, type, duration)`. Types: error/warning/success/info. Use this instead of native `alert()`. |
 | `static/uploads/` | Uploaded documents and images (runtime, gitignored). |
 | `static/images/` | Generated images from FLUX (runtime, gitignored). |
@@ -126,6 +127,10 @@
 | `PATCH` | `/api/config` | Update generation config |
 | `POST` | `/api/say` | Speak text via macOS `say` command |
 | `POST` | `/api/stop-say` | Terminate speech |
+| `GET` | `/api/system-prompts?q=` | Search/list saved system prompt templates |
+| `POST` | `/api/system-prompts` | Save a new system prompt template |
+| `PUT` | `/api/system-prompts/{id}` | Update an existing template |
+| `DELETE` | `/api/system-prompts/{id}` | Delete a template |
 
 ---
 
@@ -231,6 +236,10 @@ documents (id INTEGER PK, chat_id TEXT FK, file_name TEXT, content TEXT,
 
 -- Key-value settings (schema exists but NOT currently used)
 settings (key TEXT PK, value TEXT, updated_at TIMESTAMP)
+
+-- Reusable system prompt templates
+system_prompt_templates (id INTEGER PK AUTOINCREMENT, name TEXT, content TEXT,
+                        created_at TIMESTAMP, updated_at TIMESTAMP)
 ```
 
 ---
@@ -265,6 +274,7 @@ The frontend reads SSE streams token-by-token. Key data fields:
 - `{model_badge: "text"}` — Temporarily changes the model name badge (during FLUX).
 - `{model_badge_restore: true}` — Restores the badge to the active LLM name.
 - `{error: "message"}` — Displays an error.
+- `{model_crash: true, fallback_model: "...", fallback_model_display: "..."}` — Worker OOM crash: frontend shows toast and reloads.
 
 ---
 

@@ -88,8 +88,17 @@
                     <span>System Prompt</span>
                     <button class="system-prompt-save" id="system-prompt-save">Save</button>
                 </div>
+                <div class="system-prompt-search">
+                    <input type="text" id="system-prompt-search" placeholder="Search saved templates..." autocomplete="off">
+                    <div class="system-prompt-search-results" id="system-prompt-search-results"></div>
+                </div>
                 <textarea id="system-prompt-input"
                     placeholder="Set a system prompt for this conversation (persona, specific instructions...)"></textarea>
+                <div class="system-prompt-footer">
+                    <button class="system-prompt-template-save" id="system-prompt-template-save" title="Save as reusable template">
+                        <i data-lucide="bookmark"></i> Save as Template
+                    </button>
+                </div>
             </div>
 
             <div class="messages-container" id="messages-container">
