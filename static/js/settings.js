@@ -19,6 +19,38 @@ export function closeSettings() {
     setTimeout(() => elements.settingsModal.style.display = 'none', 300);
 }
 
+// --- Reset to Defaults ---
+
+export async function resetSettings() {
+    const defaults = {
+        max_tokens: 8192,
+        temperature: 0.3,
+        top_p: 0.9,
+        repetition_penalty: 1.1,
+        rag_similarity_threshold: 0.3,
+        pdf_text_pages_per_batch: 50,
+        pdf_image_pages_per_batch: 5,
+        image_generation_resolution: '720x720',
+        rolling_window_max_tokens: 3200,
+        summary_max_tokens: 600,
+    };
+
+    try {
+        const res = await fetch(`${API_URL}/api/config`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(defaults),
+        });
+        if (!res.ok) throw new Error('Failed to reset');
+        const cfg = await res.json();
+        applyConfigToUI(cfg);
+        showToast('Settings reset to defaults.', 'success', 3000);
+    } catch (err) {
+        console.error('Failed to reset settings:', err);
+        showToast('Failed to reset settings.', 'error');
+    }
+}
+
 // --- Config Load/Save ---
 
 export async function loadConfig() {

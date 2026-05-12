@@ -137,7 +137,7 @@
 ## Key Concepts
 
 ### Model Management
-- Models must be from `mlx-community/` on Hugging Face.
+- Models must `mlx` compatible.
 - Models are stored in HF's cache at `~/.cache/huggingface/hub/`.
 - The server attempts VLM load first (`mlx_vlm`), falls back to standard LLM (`mlx_lm`).
 - Only one model is loaded in GPU memory at a time. Switching unloads the previous model.

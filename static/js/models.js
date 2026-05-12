@@ -36,8 +36,10 @@ export async function addNewModel() {
     const name = elements.newModelInput.value.trim();
     if (!name) return;
 
-    if (!name.includes('mlx-community')) {
-        showToast("Model must be from the 'mlx-community' organization on Hugging Face.", "error");
+    const lowerName = name.toLowerCase();
+
+    if (!lowerName.includes('mlx')) {
+        showToast("Model must be MLX compatible (eg: mlx-community/gemma-4-e2b-it-4bit or Jackrong/MLX-Qwen3.5-9B-Claude-4.6-Opus-Reasoning-Distilled-v2-4bit).", "error");
         return;
     }
 

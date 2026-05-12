@@ -126,7 +126,7 @@ export async function sendMessage(text = null) {
                         }
 
                         if (data.model_crash) {
-                            showToast(`Model process crashed. Falling back to ${data.fallback_model_display}.`, "warning", 8000);
+                            showToast(`Model process crashed. Falling back to ${data.fallback_model_display}.`, "warning", 30000);
                             // Update badge from SSE data (always correct)
                             elements.modelBadge.textContent = data.fallback_model_display;
                             elements.modelBadge.style.opacity = '1';

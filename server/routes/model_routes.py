@@ -33,8 +33,8 @@ def get_models():
 @router.post("/api/models")
 async def add_model(model_data: ModelAdd):
     """SSE stream that verifies, downloads, and adds a new model."""
-    if "mlx-community" not in model_data.name:
-        raise HTTPException(status_code=400, detail="Model must be from mlx-community")
+    if "mlx" not in model_data.name.lower():
+        raise HTTPException(status_code=400, detail="Model must be MLX compatible")
 
     # Check if exists in DB first
     with closing(get_db_connection()) as conn:

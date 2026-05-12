@@ -86,7 +86,9 @@
             <div class="system-prompt-panel" id="system-prompt-panel">
                 <div class="system-prompt-header">
                     <span>System Prompt</span>
-                    <button class="system-prompt-save" id="system-prompt-save">Save</button>
+                    <button class="system-prompt-template-save" id="system-prompt-template-save" title="Save as reusable template">
+                        <i data-lucide="bookmark"></i>
+                    </button>
                 </div>
                 <div class="system-prompt-search">
                     <input type="text" id="system-prompt-search" placeholder="Search saved templates..." autocomplete="off">
@@ -95,9 +97,7 @@
                 <textarea id="system-prompt-input"
                     placeholder="Set a system prompt for this conversation (persona, specific instructions...)"></textarea>
                 <div class="system-prompt-footer">
-                    <button class="system-prompt-template-save" id="system-prompt-template-save" title="Save as reusable template">
-                        <i data-lucide="bookmark"></i> Save as Template
-                    </button>
+                    <button class="system-prompt-save" id="system-prompt-save">Save</button>
                 </div>
             </div>
 
@@ -164,14 +164,15 @@
     <div id="settings-modal" class="modal-overlay">
         <div class="settings-card">
             <div class="settings-header">
-                <div style="display:flex;align-items:center;gap:12px;">
-                    <i data-lucide="settings" style="width:22px;height:22px;color:var(--accent-color);"></i>
+                <div class="settings-header-left">
+                    <i data-lucide="settings"></i>
                     <h2>Settings</h2>
                 </div>
                 <button class="settings-close-btn" id="settings-close-btn" title="Close">
                     <i data-lucide="x"></i>
                 </button>
             </div>
+            <div class="settings-body">
 
             <!-- Generation Parameters -->
             <div class="settings-section">
@@ -333,7 +334,8 @@
             <!-- Model Library -->
             <div class="settings-section">
                 <h3 class="settings-section-title">🤖 Model Library</h3>
-                <p class="settings-section-desc">Add a new model from HF (must be <code>mlx-community/</code>). Deleting
+                <p class="settings-section-desc">Add a new model from HF, must be mlx compatible eg: <code>mlx-community/gemma-4-e2b-it-4bit</code>
+                    or <code>Jackrong/MLX-Qwen3.5-9B-Claude-4.6-Opus-Reasoning-Distilled-v2-4bit</code>. Deleting
                     a model removes it from disk (<code>~/.cache/huggingface/hub/</code>). The active model cannot be
                     deleted.</p>
 
@@ -358,6 +360,12 @@
                 <div id="settings-models-list" class="settings-models-list">
                     <!-- injected by JS -->
                 </div>
+            </div>
+            </div><!-- /settings-body -->
+            <div class="settings-footer">
+                <button class="settings-reset-btn" id="settings-reset-btn" title="Reset all settings to defaults">
+                    <i data-lucide="rotate-ccw"></i> Reset to Default
+                </button>
             </div>
         </div>
     </div>

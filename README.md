@@ -151,12 +151,7 @@ Control your FastAPI application running in the background natively:
 
 ## 🧩 Modding & Available Models
 
-The application dynamically detects model environments. You can add new ones by pasting their Hugging Face identifier into the custom UI settings modal: [MLX Community LLM Collections](https://huggingface.co/mlx-community/collections)
+The application dynamically detects model environments. You can add new ones by pasting their Hugging Face identifier into the custom UI settings modal: [MLX LLM Collections](https://huggingface.co/models?sort=trending&search=mlx)
 
 - **Gemma 4 2B (Default)**: `mlx-community/gemma-4-e2b-it-4bit`
 - **Gemma 4 4B**: `mlx-community/gemma-4-e4b-it-4bit`
-
-> [!TIP]
-> For coding tasks, use `mlx-community/Qwen2.5-Coder-7B-Instruct-4bit`
-> For logic and reasoning tasks, use `mlx-community/Qwen3-14B-4bit`
-> You can switch between active models instantly using the sidebar dropdown! The MLX engine will automatically dump the previous model from VRAM and allocate the new pipeline on the fly.

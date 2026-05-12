@@ -10,7 +10,7 @@ import { initMarked, initScrollTracking, copyCode, copyToClipboard } from './uti
 import { sendMessage, stopGeneration, updateRagStatusUI } from './chat.js';
 import { loadChatHistory, startNewChat, hideDeleteModal, toggleSidebar, closeSidebar } from './sidebar.js';
 import { loadModels, addNewModel, switchModel } from './models.js';
-import { openSettings, closeSettings, loadConfig, initConfigSliders } from './settings.js';
+import { openSettings, closeSettings, loadConfig, initConfigSliders, resetSettings } from './settings.js';
 import { initDocumentUpload } from './documents.js';
 import { speakResponse, stopSpeaking, toggleRecording, initSpeechRecognition } from './speech.js';
 import { loadSystemPrompt, saveSystemPrompt, toggleSystemPrompt, initSystemPromptSearch } from './system_prompt.js';
@@ -74,7 +74,11 @@ elements.voiceBtn.addEventListener('click', toggleRecording);
 
 // System Prompt
 document.getElementById('system-prompt-toggle').addEventListener('click', toggleSystemPrompt);
-document.getElementById('system-prompt-save').addEventListener('click', saveSystemPrompt);
+document.getElementById('system-prompt-save').addEventListener('click', async () => {
+    await saveSystemPrompt();
+    elements.systemPromptPanel.classList.remove('open');
+    elements.systemPromptToggle.classList.remove('active');
+});
 
 // Models
 elements.addModelBtn.addEventListener('click', addNewModel);
@@ -86,6 +90,7 @@ elements.settingsCloseBtn.addEventListener('click', closeSettings);
 elements.settingsModal.addEventListener('click', (e) => {
     if (e.target === elements.settingsModal) closeSettings();
 });
+document.getElementById('settings-reset-btn').addEventListener('click', resetSettings);
 
 // Delete modal
 elements.modalCancelBtn.addEventListener('click', hideDeleteModal);
