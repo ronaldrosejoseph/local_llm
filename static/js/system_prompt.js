@@ -68,6 +68,7 @@ export async function saveSystemPrompt() {
 // --- Template search ---
 
 let _searchTimer = null;
+let _searchSeq = 0;  // monotonic counter — ignore stale async responses
 
 export function initSystemPromptSearch() {
     const searchInput = elements.systemPromptSearch;
@@ -77,6 +78,7 @@ export function initSystemPromptSearch() {
         clearTimeout(_searchTimer);
         const q = searchInput.value.trim();
         if (!q) {
+            _searchSeq++;  // invalidate any in-flight search
             resultsEl.classList.remove('visible');
             resultsEl.innerHTML = '';
             return;
@@ -88,6 +90,8 @@ export function initSystemPromptSearch() {
         const q = searchInput.value.trim();
         if (q) {
             searchTemplates(q);
+        } else {
+            _searchSeq++;  // invalidate any in-flight search from stale focus
         }
     });
 
@@ -103,11 +107,16 @@ export function initSystemPromptSearch() {
 }
 
 async function searchTemplates(query) {
+    const seq = ++_searchSeq;  // capture current sequence number
     const resultsEl = elements.systemPromptSearchResults;
     try {
         const res = await fetch(`${API_URL}/api/system-prompts?q=${encodeURIComponent(query)}`);
         if (!res.ok) return;
         const templates = await res.json();
+        // Ignore stale responses: either superseded by a newer search, or the
+        // input has been cleared (user already picked a template and closed the dropdown)
+        if (seq !== _searchSeq) return;
+        if (!elements.systemPromptSearch.value.trim()) return;
 
         if (!templates.length) {
             resultsEl.innerHTML = '<div class="sp-search-empty">No templates found</div>';
