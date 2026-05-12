@@ -68,6 +68,21 @@ elements.chatInput.addEventListener('input', () => {
     elements.chatInput.style.height = elements.chatInput.scrollHeight + 'px';
 });
 
+// Strip trailing whitespace and collapse empty lines on paste
+elements.chatInput.addEventListener('paste', () => {
+    setTimeout(() => {
+        const cleaned = elements.chatInput.value
+            .replace(/[ \t]+$/gm, '')          // strip trailing whitespace per line
+            .replace(/\n{3,}/g, '\n\n')        // collapse 3+ newlines to 2
+            .replace(/^\n+/, '')               // strip leading empty lines
+            .replace(/\n+$/, '');              // strip trailing empty lines
+        if (cleaned !== elements.chatInput.value) {
+            elements.chatInput.value = cleaned;
+            elements.chatInput.dispatchEvent(new Event('input'));
+        }
+    }, 0);
+});
+
 // Stop & Voice
 elements.stopBtn.addEventListener('click', stopGeneration);
 elements.voiceBtn.addEventListener('click', toggleRecording);

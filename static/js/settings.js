@@ -168,19 +168,25 @@ export async function loadSettingsModels() {
             const item = document.createElement('div');
             item.className = 'settings-model-item';
 
+            const typeLabel = m.type === 'vlm' ? 'VLM' : m.type === 'lm' ? 'LM' : '?';
+            const typeTitle = m.type === 'vlm' ? 'Vision-Language Model' : m.type === 'lm' ? 'Text-Only Model' : 'Not yet verified — load the model first';
+            const typeBadge = `<span class="settings-model-type ${m.type || 'unknown'}" title="${typeTitle}">${typeLabel}</span>`;
+
             item.innerHTML = `
                 <div class="settings-model-info">
                     <span class="settings-model-name" title="${m.name}">${name}</span>
                     <span class="settings-model-org">${org}</span>
                 </div>
+                ${typeBadge}
                 ${m.active ? '<span class="settings-model-active-badge">Active</span>' : ''}
-                <button class="delete-model-btn" title="Delete model" ${m.active ? 'disabled' : ''}>
+                ${m.name === 'mlx-community/gemma-4-e2b-it-4bit' ? '<span class="settings-model-active-badge" style="background:rgba(255,170,80,0.12);color:#f0a040;border-color:rgba(255,170,80,0.3);">Fallback</span>' : ''}
+                <button class="delete-model-btn" title="Delete model" ${m.active || m.name === 'mlx-community/gemma-4-e2b-it-4bit' ? 'disabled' : ''}>
                     <i data-lucide="trash-2"></i>
                 </button>
             `;
 
             const btn = item.querySelector('.delete-model-btn');
-            if (!m.active) {
+            if (!m.active && m.name !== 'mlx-community/gemma-4-e2b-it-4bit') {
                 btn.addEventListener('click', () => confirmDeleteModel(m.name, btn));
             }
 

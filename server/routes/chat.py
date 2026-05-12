@@ -43,9 +43,20 @@ def get_chats(q: Optional[str] = None):
 @router.get("/api/chats/{chat_id}/messages")
 def get_messages(chat_id: str):
     with closing(get_db_connection()) as conn:
-        messages = conn.execute("SELECT role, content FROM messages WHERE chat_id = ? ORDER BY timestamp",
-                                (chat_id,)).fetchall()
-    return [{"role": m["role"], "content": m["content"]} for m in messages]
+        messages = conn.execute(
+            "SELECT role, content, generation_time_ms, token_count "
+            "FROM messages WHERE chat_id = ? ORDER BY timestamp",
+            (chat_id,),
+        ).fetchall()
+    return [
+        {
+            "role": m["role"],
+            "content": m["content"],
+            "generation_time_ms": m["generation_time_ms"] or 0,
+            "token_count": m["token_count"] or 0,
+        }
+        for m in messages
+    ]
 
 
 @router.post("/api/chats/{chat_id}/generate-title")
@@ -416,6 +427,9 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
             yield f"data: {json.dumps({'rag_status': rag_meta})}\n\n"
 
         full_response = ""
+        import time
+        token_count = 0
+        gen_start = None  # set on first token (excludes prefill/thinking time)
         try:
             cfg = load_config()
 
@@ -440,15 +454,18 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                 top_p=cfg["top_p"],
                 repetition_penalty=cfg["repetition_penalty"],
             ):
+                if gen_start is None:
+                    gen_start = time.monotonic()
+                token_count += 1
                 full_response += token
                 yield f"data: {json.dumps({'content': token})}\n\n"
                 await asyncio.sleep(0)
 
-        except InferenceCrash:
+        except InferenceCrash as e:
             print(f"Chat generation for {chat_id}: model worker crashed", file=sys.stderr)
-            # Fallback to default model
             fallback_display = state.DEFAULT_MODEL.split("/")[-1]
-            yield f"data: {json.dumps({'model_crash': True, 'fallback_model': state.DEFAULT_MODEL, 'fallback_model_display': fallback_display})}\n\n"
+            crash_detail = str(e) if str(e) != "Worker process error" else ""
+            yield f"data: {json.dumps({'model_crash': True, 'fallback_model': state.DEFAULT_MODEL, 'fallback_model_display': fallback_display, 'detail': crash_detail})}\n\n"
             yield f"data: {json.dumps({'error': 'Model process crashed. Falling back to a smaller model. Please try again.'})}\n\n"
 
         except asyncio.CancelledError:
@@ -457,14 +474,37 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
             print(f"Error during generation: {e}")
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
         finally:
-            # Save assistant message even if partially generated
+            # Compute generation stats — prefer MLX-reported GPU timings
+            gen_time_ms = 0
+            tps = 0.0
+            mlx_stats = getattr(state.model_manager, '_last_gen_stats', None)
+
+            if mlx_stats and mlx_stats.get('tokens_per_second', 0) > 0:
+                # MLX-reported stats (GPU-level timing, most accurate)
+                token_count = mlx_stats.get('generation_tokens', token_count)
+                tps = mlx_stats.get('tokens_per_second', 0)
+                gen_time_ms = int((token_count / tps) * 1000) if tps > 0 else 0
+            elif gen_start is not None and token_count > 0:
+                # Manual timing fallback (first-token → last-token)
+                gen_time_ms = int((time.monotonic() - gen_start) * 1000)
+                elapsed_s = gen_time_ms / 1000
+                tps = token_count / elapsed_s if elapsed_s > 0 else 0
+
+            # Save assistant message with generation stats
             assistant_msg_id = None
             if full_response:
                 with closing(get_db_connection()) as conn:
-                    cursor = conn.execute("INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)",
-                                 (chat_id, "assistant", full_response))
+                    cursor = conn.execute(
+                        "INSERT INTO messages (chat_id, role, content, generation_time_ms, token_count) VALUES (?, ?, ?, ?, ?)",
+                        (chat_id, "assistant", full_response, gen_time_ms, token_count),
+                    )
                     assistant_msg_id = cursor.lastrowid
                     conn.commit()
+
+            # Yield stats to frontend before [DONE]
+            if token_count > 0:
+                elapsed_s = gen_time_ms / 1000 if gen_time_ms > 0 else 0
+                yield f"data: {json.dumps({'gen_stats': {'tokens': token_count, 'time_ms': gen_time_ms, 'time_s': round(elapsed_s, 1), 'tps': round(tps, 1)}})}\n\n"
 
             # Release concurrency lock
             state.generation_lock.release()

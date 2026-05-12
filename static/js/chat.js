@@ -53,7 +53,11 @@ export async function sendMessage(text = null) {
     let streamRenderTimer = null;
     let assistantMessageDiv = null;
     let contentDiv = null;
+    let actionsDiv = null;
     let fullContent = "";
+    let tokenCount = 0;
+    let genStartTime = 0;  // set on first token — excludes prefill/thinking time
+    let serverStats = null;  // populated from SSE gen_stats event (more accurate)
 
     // Lock UI immediately for ALL generations
     document.querySelectorAll('#chat-history, .new-chat-btn, #settings-open-btn').forEach(item => {
@@ -126,7 +130,17 @@ export async function sendMessage(text = null) {
                         }
 
                         if (data.model_crash) {
-                            showToast(`Model process crashed. Falling back to ${data.fallback_model_display}.`, "warning", 30000);
+                            // Remove typing indicator — model is gone
+                            if (typingIndicator && document.contains(typingIndicator)) {
+                                typingIndicator.remove();
+                            }
+                            // Build toast message with crash diagnostics
+                            let crashMsg = `Model process crashed.\n\n`;
+                            if (data.detail) {
+                                crashMsg += `${data.detail}\n\n`;
+                            }
+                            crashMsg += `Falling back to ${data.fallback_model_display}.`;
+                            showToast(crashMsg, "error", 0);  // never auto-close
                             // Update badge from SSE data (always correct)
                             elements.modelBadge.textContent = data.fallback_model_display;
                             elements.modelBadge.style.opacity = '1';
@@ -148,6 +162,11 @@ export async function sendMessage(text = null) {
                             }
                         }
 
+                        if (data.gen_stats) {
+                            serverStats = data.gen_stats;
+                            continue;
+                        }
+
                         if (data.chat_id && !requestChatId) {
                             requestChatId = data.chat_id;
                             if (!state.currentChatId) state.currentChatId = data.chat_id;
@@ -155,12 +174,22 @@ export async function sendMessage(text = null) {
                         }
                         if (data.clear) {
                             fullContent = "";
+                            tokenCount = 0;
+                            genStartTime = 0;
                             if (contentDiv) contentDiv.innerHTML = "";
                             continue;
                         }
                         if (data.replace || data.content) {
-                            if (data.replace) fullContent = data.replace;
-                            if (data.content) fullContent += data.content;
+                            if (data.replace) {
+                                fullContent = data.replace;
+                                tokenCount = 0;
+                                genStartTime = 0;
+                            }
+                            if (data.content) {
+                                if (!genStartTime) genStartTime = performance.now();
+                                fullContent += data.content;
+                                tokenCount++;
+                            }
 
                             if (state.currentChatId === requestChatId) {
                                 if (!contentDiv || !document.contains(contentDiv)) {
@@ -172,9 +201,9 @@ export async function sendMessage(text = null) {
                                     contentDiv.className = 'message-content';
                                     assistantMessageDiv.appendChild(contentDiv);
 
-                                    const actionsDiv = document.createElement('div');
+                                    actionsDiv = document.createElement('div');
                                     actionsDiv.className = 'message-actions';
-                                    actionsDiv.style.cssText = 'margin-top: 5px; opacity: 0.5; display: flex; gap: 10px;';
+                                    actionsDiv.style.cssText = 'margin-top: 5px; opacity: 0.5; display: flex; gap: 10px; align-items: center;';
                                     actionsDiv.innerHTML = `
                                         <button onclick="speakResponse(this.parentElement.previousElementSibling.textContent)" title="Read out loud" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="volume-2" style="width: 14px; height: 14px;"></i></button>
                                         <button onclick="stopSpeaking()" title="Stop speaking" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="square" style="width: 14px; height: 14px;"></i></button>
@@ -224,6 +253,33 @@ export async function sendMessage(text = null) {
             contentDiv.innerHTML = renderMarkdown(fullContent);
             highlightCode(contentDiv);
             lucide.createIcons({ elements: Array.from(contentDiv.querySelectorAll('[data-lucide]')) });
+        }
+
+        // Generation stats — prefer server-side timing (excludes network jitter)
+        if (actionsDiv && fullContent) {
+            let tokens, timeS, tps;
+            if (serverStats && serverStats.tokens > 0) {
+                tokens = serverStats.tokens;
+                timeS = serverStats.time_s;
+                tps = serverStats.tps;
+            } else if (tokenCount > 0 && genStartTime > 0) {
+                tokens = tokenCount;
+                timeS = (performance.now() - genStartTime) / 1000;
+                tps = timeS > 0 ? (tokenCount / timeS) : 0;
+                timeS = Math.round(timeS * 10) / 10;
+                tps = Math.round(tps * 10) / 10;
+            }
+            if (tokens > 0) {
+                const timeStr = timeS >= 1
+                    ? `${timeS.toFixed(1)}s`
+                    : `${Math.round(timeS * 1000)}ms`;
+                const oldStats = actionsDiv.querySelector('.message-stats');
+                if (oldStats) oldStats.remove();
+                const statsSpan = document.createElement('span');
+                statsSpan.className = 'message-stats';
+                statsSpan.textContent = `${tokens} tokens · ${timeStr} · ${tps.toFixed(1)} t/s`;
+                actionsDiv.appendChild(statsSpan);
+            }
         }
 
         elements.sendBtn.style.display = 'flex';
@@ -279,18 +335,30 @@ export async function stopGeneration() {
 
 // --- Message Rendering ---
 
-export function appendMessage(role, content) {
+export function appendMessage(role, content, stats = null) {
     const div = document.createElement('div');
     div.className = `message ${role}`;
     const formattedContent = renderMarkdown(content);
+
+    let statsHtml = '';
+    if (stats && stats.token_count > 0) {
+        const elapsedS = (stats.generation_time_ms || 0) / 1000;
+        const tps = elapsedS > 0 ? (stats.token_count / elapsedS) : 0;
+        const timeStr = elapsedS >= 1
+            ? `${elapsedS.toFixed(1)}s`
+            : `${Math.round(elapsedS * 1000)}ms`;
+        statsHtml = `<span class="message-stats">${stats.token_count} tokens · ${timeStr} · ${tps.toFixed(1)} t/s</span>`;
+    }
+
     div.innerHTML = `
         <div class="message-content">${formattedContent}</div>
-        <div class="message-actions" style="margin-top: 5px; opacity: 0.5; display: flex; gap: 10px;">
+        <div class="message-actions" style="margin-top: 5px; opacity: 0.5; display: flex; gap: 10px; align-items: center;">
             ${role === 'assistant' ? `
                 <button onclick="speakResponse(this.parentElement.previousElementSibling.textContent)" title="Read out loud" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="volume-2" style="width: 14px; height: 14px;"></i></button>
                 <button onclick="stopSpeaking()" title="Stop speaking" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="square" style="width: 14px; height: 14px;"></i></button>
                 <button onclick="copyToClipboard(this.parentElement.previousElementSibling.textContent, this)" title="Copy to clipboard" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="copy" style="width: 14px; height: 14px;"></i></button>
             ` : ''}
+            ${statsHtml}
         </div>
     `;
     elements.messagesContainer.appendChild(div);

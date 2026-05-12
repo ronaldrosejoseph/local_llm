@@ -50,6 +50,8 @@ class ModelManager:
         self._send_lock = asyncio.Lock()
         self._ping_fail_count = 0
         self._shutting_down = False
+        self._last_load_error = None  # surfaced to frontend on failed model loads
+        self._stderr_tail: list[str] = []  # last N stderr lines for crash diagnostics
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -136,21 +138,55 @@ class ModelManager:
     # ------------------------------------------------------------------
 
     async def load_model(self, model_name: str, offline: bool = True) -> tuple[bool, str]:
-        """Load a model in the child process. Returns (success, actual_model_name)."""
+        """Load a model in the child process. Returns (success, actual_model_name).
+
+        If the requested model fails to load, automatically falls back to the
+        default model (gemma-4-e2b-it-4bit) and returns its name on failure.
+        """
         cmd = {
             "command": "load",
             "request_id": str(uuid.uuid4()),
             "model_name": model_name,
             "offline": offline,
         }
-        responses = []
+        last_error = None
         await self._send_raw(cmd)
         async for resp in self._read_responses(cmd["request_id"]):
-            responses.append(resp)
             if resp.get("type") == "loaded":
                 self.model_name = resp.get("model_name", model_name)
                 self.is_vlm = resp.get("is_vlm", False)
                 self.context_length = resp.get("context_length", 8192)
+                _update_model_type_in_db(model_name, self.is_vlm)
+                return True, self.model_name
+            elif resp.get("type") == "error":
+                last_error = resp.get("message", "")
+                self._last_load_error = last_error
+                break
+
+        # Model failed — fall back to default
+        fallback = state.DEFAULT_MODEL
+        if model_name != fallback:
+            print(f"ModelManager: failed to load {model_name}, falling back to {fallback}", file=sys.stderr)
+            success, name = await self._load_model_internal(fallback, offline)
+            if success:
+                return False, name
+        return False, fallback
+
+    async def _load_model_internal(self, model_name: str, offline: bool = True) -> tuple[bool, str]:
+        """Load a model without fallback (used internally to load the default)."""
+        cmd = {
+            "command": "load",
+            "request_id": str(uuid.uuid4()),
+            "model_name": model_name,
+            "offline": offline,
+        }
+        await self._send_raw(cmd)
+        async for resp in self._read_responses(cmd["request_id"]):
+            if resp.get("type") == "loaded":
+                self.model_name = resp.get("model_name", model_name)
+                self.is_vlm = resp.get("is_vlm", False)
+                self.context_length = resp.get("context_length", 8192)
+                _update_model_type_in_db(model_name, self.is_vlm)
                 return True, self.model_name
             elif resp.get("type") == "error":
                 return False, model_name
@@ -171,7 +207,12 @@ class ModelManager:
                               image_paths: list = None, max_tokens: int = 8192,
                               temperature: float = 0.3, top_p: float = 0.9,
                               repetition_penalty: float = 1.1):
-        """Stream tokens from the child process. Yields token strings."""
+        """Stream tokens from the child process. Yields token strings.
+
+        After the generator is exhausted, read self._last_gen_stats for
+        MLX-computed tokens_per_second and generation_tokens (if available).
+        """
+        self._last_gen_stats = None
         cmd = {
             "command": "generate",
             "request_id": str(uuid.uuid4()),
@@ -192,6 +233,12 @@ class ModelManager:
             if t == "token":
                 yield resp.get("content", "")
             elif t == "done":
+                # Capture MLX-reported stats from the done response
+                if resp.get("tokens_per_second"):
+                    self._last_gen_stats = {
+                        "tokens_per_second": resp.get("tokens_per_second", 0),
+                        "generation_tokens": resp.get("generation_tokens", 0),
+                    }
                 return
             # error types are now raised as InferenceCrash inside _read_responses
 
@@ -275,10 +322,11 @@ class ModelManager:
         asyncio.create_task(self._log_stderr())
 
     async def _log_stderr(self):
-        """Read worker stderr and log it."""
+        """Read worker stderr, log it, and keep a tail buffer for crash diagnostics."""
         if self.process is None or self.process.stderr is None:
             return
         loop = asyncio.get_running_loop()
+        MAX_TAIL = 20
 
         def _read():
             try:
@@ -290,7 +338,11 @@ class ModelManager:
             try:
                 line = await loop.run_in_executor(None, _read)
                 if line:
-                    print(f"[worker:{self.process.pid}] {line.rstrip()}", file=sys.stderr)
+                    stripped = line.rstrip()
+                    print(f"[worker:{self.process.pid}] {stripped}", file=sys.stderr)
+                    self._stderr_tail.append(stripped)
+                    if len(self._stderr_tail) > MAX_TAIL:
+                        self._stderr_tail = self._stderr_tail[-MAX_TAIL:]
                 else:
                     break
             except Exception:
@@ -407,8 +459,9 @@ class ModelManager:
             exit_code = self.process.poll()
         print(f"ModelManager: worker exited with code={exit_code}", file=sys.stderr)
 
-        # Push error to all pending request queues
-        _notify_pending_crash(self._pending)
+        # Push error to all pending request queues — include relevant crash lines
+        crash_detail = _extract_crash_detail(self._stderr_tail)
+        _notify_pending_crash(self._pending, crash_detail)
 
         # Trigger crash recovery
         await self._crash_recovery()
@@ -487,12 +540,14 @@ class ModelManager:
                     self._ping_fail_count += 1
                     if self._ping_fail_count >= 3:
                         print("ModelManager: health check failed 3 times, triggering recovery", file=sys.stderr)
-                        _notify_pending_crash(self._pending)
+                        crash_detail = _extract_crash_detail(self._stderr_tail)
+                        _notify_pending_crash(self._pending, crash_detail)
                         await self._crash_recovery()
             except Exception:
                 self._ping_fail_count += 1
                 if self._ping_fail_count >= 3:
-                    _notify_pending_crash(self._pending)
+                    crash_detail = _extract_crash_detail(self._stderr_tail)
+                    _notify_pending_crash(self._pending, crash_detail)
                     await self._crash_recovery()
 
             await asyncio.sleep(15)
@@ -533,12 +588,29 @@ class ModelManager:
 # Helper
 # ------------------------------------------------------------------
 
-def _notify_pending_crash(pending: dict):
+def _extract_crash_detail(stderr_tail: list[str]) -> str:
+    """Extract only the crash-relevant lines from the worker's stderr tail."""
+    crash_keywords = (
+        "error", "exception", "terminating", "fatal", "insufficient",
+        "memory", "killed", "abort", "traceback", "signal", "segfault",
+        "bus error", "metal", "out of memory", "oom",
+    )
+    relevant = []
+    for line in stderr_tail[-15:]:
+        line_lower = line.lower()
+        if any(kw in line_lower for kw in crash_keywords):
+            relevant.append(line)
+    return "\n".join(relevant[-3:])  # at most the last 3 crash lines
+
+
+def _notify_pending_crash(pending: dict, detail: str = ""):
     """Push error+done to every pending request queue so generators wake up."""
+    msg = "Model process crashed (OOM or unexpected error)"
+    if detail:
+        msg += "\n\n" + detail
     for rid, q in list(pending.items()):
         try:
-            q.put_nowait({"request_id": rid, "type": "error",
-                           "message": "Model process crashed (OOM or unexpected error)"})
+            q.put_nowait({"request_id": rid, "type": "error", "message": msg})
         except asyncio.QueueFull:
             pass
         try:
@@ -550,6 +622,26 @@ def _notify_pending_crash(pending: dict):
 # ------------------------------------------------------------------
 # Orphan cleanup
 # ------------------------------------------------------------------
+
+def _update_model_type_in_db(model_name: str, is_vlm: bool):
+    """Persist model type from worker load result to DB.
+
+    Only fills in NULL (not-yet-verified) entries. Once a type is set
+    it is not overwritten — this preserves manual corrections for models
+    where mlx_vlm.load() fails but vision still works (e.g. quantized
+    models with stripped vision tower signatures).
+    """
+    try:
+        with closing(get_db_connection()) as conn:
+            conn.execute(
+                "UPDATE models SET supports_vision = ?, is_downloaded = 1 "
+                "WHERE name = ? AND supports_vision IS NULL",
+                (1 if is_vlm else 0, model_name),
+            )
+            conn.commit()
+    except Exception:
+        pass
+
 
 def _kill_orphan_workers():
     """Kill any leftover worker.py processes from previous runs."""

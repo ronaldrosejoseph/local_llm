@@ -37,9 +37,16 @@ export function showToast(message, type = 'info', duration = 5000) {
         --toast-border: ${config.border};
     `;
 
+    // Escape HTML and convert newlines to <br> for multi-line messages
+    const safeMessage = message
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\n/g, '<br>');
+
     toast.innerHTML = `
         <i data-lucide="${config.icon}" class="toast-icon"></i>
-        <span class="toast-message">${message}</span>
+        <span class="toast-message">${safeMessage}</span>
         <button class="toast-close" title="Dismiss">
             <i data-lucide="x"></i>
         </button>

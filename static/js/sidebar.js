@@ -74,7 +74,10 @@ export async function loadChat(chatId, title, isFallback = false) {
         // Import appendMessage to avoid circular dep
         const { appendMessage } = await import('./chat.js');
         messages.forEach(msg => {
-            appendMessage(msg.role, msg.content);
+            appendMessage(msg.role, msg.content, {
+                generation_time_ms: msg.generation_time_ms || 0,
+                token_count: msg.token_count || 0,
+            });
         });
 
         // Load RAG status

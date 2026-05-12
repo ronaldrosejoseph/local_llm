@@ -26,8 +26,25 @@ router = APIRouter()
 @router.get("/api/models")
 def get_models():
     with closing(get_db_connection()) as conn:
-        models = conn.execute("SELECT id, name, active FROM models").fetchall()
-    return [{"id": m["id"], "name": m["name"], "active": bool(m["active"])} for m in models]
+        models = conn.execute(
+            "SELECT id, name, active, supports_vision FROM models"
+        ).fetchall()
+    result = []
+    for m in models:
+        sv = m["supports_vision"]
+        if sv is None:
+            mtype = "unknown"
+        elif sv == 1:
+            mtype = "vlm"
+        else:
+            mtype = "lm"
+        result.append({
+            "id": m["id"],
+            "name": m["name"],
+            "active": bool(m["active"]),
+            "type": mtype,
+        })
+    return result
 
 
 @router.post("/api/models")
@@ -68,10 +85,13 @@ async def add_model(model_data: ModelAdd):
                 from huggingface_hub import snapshot_download
                 snapshot_download(repo_id=model_data.name, local_files_only=False)
 
-            # 3. Add to DB
+            # 3. Add to DB — type is verified on first load by the worker
             with closing(get_db_connection()) as conn:
                 try:
-                    conn.execute("INSERT INTO models (name) VALUES (?)", (model_data.name,))
+                    conn.execute(
+                        "INSERT INTO models (name, is_downloaded) VALUES (?, 1)",
+                        (model_data.name,),
+                    )
                     conn.commit()
                 except sqlite3.IntegrityError:
                     pass
@@ -164,6 +184,12 @@ async def set_active_model(model_data: ModelAdd):
             success, actual_name = state.model_manager.sync_load_model(model_data.name)
             state.MODEL_NAME = actual_name
 
+            # Update DB: the model that actually loaded is active
+            with closing(get_db_connection()) as conn:
+                conn.execute("UPDATE models SET active = 0")
+                conn.execute("UPDATE models SET active = 1 WHERE name = ?", (actual_name,))
+                conn.commit()
+
             payload = {
                 "status": "ready",
                 "model": actual_name.split("/")[-1],
@@ -172,7 +198,8 @@ async def set_active_model(model_data: ModelAdd):
             if not success:
                 payload["fallback"] = True
                 payload["requested"] = model_data.name
-                payload["error"] = "Model failed to load and was reverted to default."
+                detail = getattr(state.model_manager, '_last_load_error', None)
+                payload["error"] = detail or "Model failed to load and was reverted to default."
             result_q.put(payload)
         except Exception as e:
             # Restore previous active model in DB
@@ -233,6 +260,12 @@ async def set_active_model(model_data: ModelAdd):
 
 @router.delete("/api/models/{model_name:path}")
 def delete_model(model_name: str):
+    # Refuse to delete the fallback model (used for crash recovery)
+    if model_name == state.DEFAULT_MODEL:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete the default fallback model. It is required for crash recovery."
+        )
     # Refuse to delete the currently loaded model
     if model_name == state.MODEL_NAME:
         raise HTTPException(

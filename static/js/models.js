@@ -181,13 +181,16 @@ export async function switchModel(modelName) {
                         setBadge(data.message || 'Loading...');
                     } else if (data.status === 'ready') {
                         if (data.fallback) {
-                            showToast(`Error loading model "${data.requested.split('/').pop()}": ${data.error}. Falling back to default model: ${data.model}`, "warning", 7000);
+                            showToast(
+                                `Failed to load "${data.requested.split('/').pop()}": ${data.error}\n\nFalling back to ${data.model}.`,
+                                "error", 0  // never auto-close — user needs to read the error
+                            );
                         }
                         setBadge(data.model, false);
                         console.log(`Switched to ${data.full}`);
                         await loadModels();
                     } else if (data.status === 'error') {
-                        showToast(data.message || 'Error loading model', "error");
+                        showToast(data.message || 'Error loading model', "error", 0);
                         setBadge(originalBadgeText, false);
                     }
                 } catch (_) { }

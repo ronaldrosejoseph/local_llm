@@ -71,8 +71,11 @@ def _error(request_id: str, message: str):
     _respond({"request_id": request_id, "type": "error", "message": message})
 
 
-def _done(request_id: str):
-    _respond({"request_id": request_id, "type": "done"})
+def _done(request_id: str, **kwargs):
+    payload = {"request_id": request_id, "type": "done"}
+    if kwargs:
+        payload.update(kwargs)
+    _respond(payload)
 
 
 # ---------------------------------------------------------------------------
@@ -126,10 +129,14 @@ def _detect_context_length() -> int:
 
 
 def _load_model(model_name: str, offline: bool = True):
-    """Load a model (VLM-first, LLM-fallback). Sets module-level globals."""
+    """Load a model (VLM-first, LLM-fallback). Sets module-level globals.
+
+    Returns (success, model_name, is_vlm, context_length, error_message).
+    """
     global _model, _tokenizer, _processor, _vlm_config, _is_vlm, _model_name
 
     _unload_model()
+    last_error = None
 
     # Set offline mode
     os.environ["HF_HUB_OFFLINE"] = "1" if offline else "0"
@@ -154,8 +161,9 @@ def _load_model(model_name: str, offline: bool = True):
         _model_name = model_name
         ctx_len = _detect_context_length()
         print(f"[worker] loaded as VLM, context_length={ctx_len}", file=sys.stderr)
-        return True, model_name, True, ctx_len
+        return True, model_name, True, ctx_len, None
     except Exception as e:
+        last_error = str(e)
         print(f"[worker] VLM load failed: {e}", file=sys.stderr)
 
     # Attempt 2: standard LLM
@@ -170,8 +178,9 @@ def _load_model(model_name: str, offline: bool = True):
         _model_name = model_name
         ctx_len = _detect_context_length()
         print(f"[worker] loaded as LLM, context_length={ctx_len}", file=sys.stderr)
-        return True, model_name, False, ctx_len
+        return True, model_name, False, ctx_len, None
     except Exception as e:
+        last_error = str(e)
         print(f"[worker] LLM load failed: {e}", file=sys.stderr)
 
     # Attempt 3: retry with networking enabled (if first attempt was offline)
@@ -194,7 +203,7 @@ def _load_model(model_name: str, offline: bool = True):
             _is_vlm = True
             _model_name = model_name
             ctx_len = _detect_context_length()
-            return True, model_name, True, ctx_len
+            return True, model_name, True, ctx_len, None
         except Exception:
             pass
 
@@ -207,13 +216,14 @@ def _load_model(model_name: str, offline: bool = True):
             _is_vlm = False
             _model_name = model_name
             ctx_len = _detect_context_length()
-            return True, model_name, False, ctx_len
+            return True, model_name, False, ctx_len, None
         except Exception as e2:
+            last_error = str(e2)
             print(f"[worker] retry with networking also failed: {e2}", file=sys.stderr)
-            return False, model_name, False, 8192
+            return False, model_name, False, 8192, last_error
 
     _model_name = None
-    return False, model_name, False, 8192
+    return False, model_name, False, 8192, last_error
 
 
 def _unload_model():
@@ -258,6 +268,7 @@ def _generate_inner(request_id: str, messages: list, is_vlm: bool, stream: bool,
             prompt = apply_vlm_template(_processor, _vlm_config, messages, num_images=num_images)
 
             if stream:
+                last = None
                 for response in mlx_vlm.stream_generate(
                     _model, _processor,
                     prompt=prompt,
@@ -270,6 +281,13 @@ def _generate_inner(request_id: str, messages: list, is_vlm: bool, stream: bool,
                         "type": "token",
                         "content": response.text,
                     })
+                    last = response
+                # Forward MLX-computed stats via _done
+                gen_tokens = getattr(last, "generation_tokens", 0) if last else 0
+                gen_tps = getattr(last, "generation_tps", 0.0) if last else 0.0
+                _done(request_id,
+                      generation_tokens=gen_tokens,
+                      tokens_per_second=round(gen_tps, 2) if gen_tps else 0)
             else:
                 result = mlx_vlm.generate(
                     _model, _processor,
@@ -279,6 +297,7 @@ def _generate_inner(request_id: str, messages: list, is_vlm: bool, stream: bool,
                 )
                 text = result if isinstance(result, str) else result.text
                 _respond({"request_id": request_id, "type": "result", "content": text.strip()})
+                _done(request_id)
         else:
             import mlx_lm
             from mlx_lm.sample_utils import make_sampler, make_repetition_penalty
@@ -293,6 +312,7 @@ def _generate_inner(request_id: str, messages: list, is_vlm: bool, stream: bool,
                 logits_processors.append(make_repetition_penalty(penalty=repetition_penalty))
 
             if stream:
+                last = None
                 for response in mlx_lm.stream_generate(
                     _model, _tokenizer,
                     prompt=prompt,
@@ -305,6 +325,13 @@ def _generate_inner(request_id: str, messages: list, is_vlm: bool, stream: bool,
                         "type": "token",
                         "content": response.text,
                     })
+                    last = response
+                # Forward MLX-computed stats via _done
+                gen_tokens = getattr(last, "generation_tokens", 0) if last else 0
+                gen_tps = getattr(last, "generation_tps", 0.0) if last else 0.0
+                _done(request_id,
+                      generation_tokens=gen_tokens,
+                      tokens_per_second=round(gen_tps, 2) if gen_tps else 0)
             else:
                 result = mlx_lm.generate(
                     _model, _tokenizer,
@@ -314,10 +341,10 @@ def _generate_inner(request_id: str, messages: list, is_vlm: bool, stream: bool,
                 )
                 text = result if isinstance(result, str) else result.text
                 _respond({"request_id": request_id, "type": "result", "content": text.strip()})
+                _done(request_id)
     except Exception as e:
         _error(request_id, str(e))
-
-    _done(request_id)
+        _done(request_id)
 
 
 # ---------------------------------------------------------------------------
@@ -335,7 +362,7 @@ def _handle_command(cmd: dict):
         if not model_name:
             _error(request_id, "model_name is required")
             return
-        success, name, is_vlm, ctx_len = _load_model(model_name, offline=offline)
+        success, name, is_vlm, ctx_len, err = _load_model(model_name, offline=offline)
         if success:
             _respond({
                 "request_id": request_id,
@@ -345,7 +372,7 @@ def _handle_command(cmd: dict):
                 "context_length": ctx_len,
             })
         else:
-            _error(request_id, f"Failed to load model: {name}")
+            _error(request_id, err or f"Failed to load model: {name}")
 
     elif command == "generate":
         _generate_inner(

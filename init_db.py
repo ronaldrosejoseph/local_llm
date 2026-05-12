@@ -95,6 +95,8 @@ def init_db():
     add_column_if_missing("chats", "rag_search_mode", "BOOLEAN DEFAULT 0")  # 0=Page Order, 1=Similarity Search
     add_column_if_missing("chats", "rag_search_query", "TEXT")  # The topic string for similarity search
     add_column_if_missing("chats", "title_is_fallback", "BOOLEAN DEFAULT 0")  # Track if title was non-LLM fallback
+    add_column_if_missing("messages", "generation_time_ms", "INTEGER DEFAULT 0")  # Generation time (first-token → last-token)
+    add_column_if_missing("messages", "token_count", "INTEGER DEFAULT 0")        # Number of tokens generated
 
     # --- System prompt templates ---
     cursor.execute("""
@@ -148,9 +150,10 @@ def init_db():
     # Seed default model if no models exist
     cursor.execute("SELECT COUNT(*) FROM models")
     if cursor.fetchone()[0] == 0:
-        cursor.execute("INSERT INTO models (name, active, supports_vision, supports_image_generation, is_downloaded) VALUES (?, ?, ?, ?, ?)", 
+        # supports_vision: 1=confirmed VLM, 0=confirmed LM, NULL=not yet loaded/verified
+        cursor.execute("INSERT INTO models (name, active, supports_vision, supports_image_generation, is_downloaded) VALUES (?, ?, ?, ?, ?)",
                        ("mlx-community/gemma-4-e2b-it-4bit", 1, 1, 0, 0))
-        cursor.execute("INSERT INTO models (name, active, supports_vision, supports_image_generation, is_downloaded) VALUES (?, ?, ?, ?, ?)", 
+        cursor.execute("INSERT INTO models (name, active, supports_vision, supports_image_generation, is_downloaded) VALUES (?, ?, ?, ?, ?)",
                        ("mlx-community/gemma-4-e4b-it-4bit", 0, 1, 0, 0))
     
     conn.commit()
