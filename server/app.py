@@ -54,11 +54,32 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown():
-    """Stop the model worker gracefully."""
+    """Stop the model worker and clean up all resources gracefully."""
     from server import state
 
+    # Stop the model worker child process
     if state.model_manager:
         await state.model_manager.stop()
+
+    # Terminate any running TTS processes
+    import signal
+    for p in list(state.say_processes):
+        try:
+            if p.poll() is None:
+                p.terminate()
+        except Exception:
+            pass
+    state.say_processes.clear()
+
+    # Clean up multiprocessing resources (prevents semaphore leak warnings)
+    try:
+        import multiprocessing.resource_tracker
+        # Unregister any remaining tracked resources
+        tracker = getattr(multiprocessing.resource_tracker, '_resource_tracker', None)
+        if tracker is not None and hasattr(tracker, '_stop'):
+            tracker._stop()
+    except Exception:
+        pass
 
     # Remove lifecycle file on clean shutdown
     if os.path.exists(LIFECYCLE_FILE):

@@ -6,6 +6,10 @@ then imports and runs the FastAPI application.
 """
 
 import os
+import warnings
+
+# Suppress noisy SWIG deprecation warnings from pymupdf/fitz
+warnings.filterwarnings("ignore", message=".*builtin type swig.*has no __module__ attribute.*")
 
 # MUST be before importing anything from HF to ensure libraries like transformers respect it
 os.environ["HF_HUB_OFFLINE"] = "1"

@@ -25,8 +25,8 @@ if [ -f "$PID_FILE" ]; then
     if [[ "$PID" =~ ^[0-9]+$ ]]; then
         echo "Stopping LLM server (PID: $PID)..."
         kill "$PID" 2>/dev/null
-        
-        for i in {1..5}; do
+
+        for i in {1..8}; do
             if ! ps -p "$PID" > /dev/null; then break; fi
             echo "Waiting for server to stop..."
             sleep 1

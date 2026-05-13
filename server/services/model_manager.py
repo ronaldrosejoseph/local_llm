@@ -131,6 +131,15 @@ class ModelManager:
             except asyncio.QueueFull:
                 pass
         self._pending.clear()
+
+        # Close pipes to prevent ResourceWarning about unclosed files
+        if self.process:
+            for pipe in (self.process.stdin, self.process.stdout, self.process.stderr):
+                if pipe:
+                    try:
+                        pipe.close()
+                    except Exception:
+                        pass
         self.process = None
 
     # ------------------------------------------------------------------
