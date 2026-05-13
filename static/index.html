@@ -86,12 +86,14 @@
             <div class="system-prompt-panel" id="system-prompt-panel">
                 <div class="system-prompt-header">
                     <span>System Prompt</span>
-                    <button class="system-prompt-template-save" id="system-prompt-template-save" title="Save as reusable template">
+                    <button class="system-prompt-template-save" id="system-prompt-template-save"
+                        title="Save as reusable template">
                         <i data-lucide="bookmark"></i>
                     </button>
                 </div>
                 <div class="system-prompt-search">
-                    <input type="text" id="system-prompt-search" placeholder="Search saved templates..." autocomplete="off">
+                    <input type="text" id="system-prompt-search" placeholder="Search saved templates..."
+                        autocomplete="off">
                     <div class="system-prompt-search-results" id="system-prompt-search-results"></div>
                 </div>
                 <textarea id="system-prompt-input"
@@ -174,193 +176,211 @@
             </div>
             <div class="settings-body">
 
-            <!-- Generation Parameters -->
-            <div class="settings-section">
-                <h3 class="settings-section-title">⚡ Generation</h3>
+                <!-- Generation Parameters -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">⚡ Generation</h3>
 
-                <div class="setting-row">
-                    <div class="setting-label">
-                        <span>Max Tokens</span>
-                        <div class="setting-info-icon"
-                            data-tooltip="Maximum length of the assistant's response. Higher values allow longer answers but may take more time.">
-                            <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <span>Max Tokens</span>
+                            <div class="setting-info-icon"
+                                data-tooltip="Maximum length of the assistant's response. Higher values allow longer answers but may take more time.">
+                                <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                            </div>
+                            <span class="setting-value" id="val-max-tokens">8192</span>
                         </div>
-                        <span class="setting-value" id="val-max-tokens">8192</span>
+                        <input type="range" class="setting-slider" id="cfg-max-tokens" min="256" max="131072" step="256"
+                            value="8192">
+                        <div class="setting-hints"><span>256</span><span>131 072</span></div>
                     </div>
-                    <input type="range" class="setting-slider" id="cfg-max-tokens" min="256" max="131072" step="256"
-                        value="8192">
-                    <div class="setting-hints"><span>256</span><span>131 072</span></div>
-                </div>
 
-                <div class="setting-row">
-                    <div class="setting-label">
-                        <span>Temperature</span>
-                        <div class="setting-info-icon"
-                            data-tooltip="Controls creativity. 0.1 is focused and deterministic; 0.8+ is more creative and random.">
-                            <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <span>Temperature</span>
+                            <div class="setting-info-icon"
+                                data-tooltip="Controls creativity. 0.1 is focused and deterministic; 0.8+ is more creative and random.">
+                                <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                            </div>
+                            <span class="setting-value" id="val-temperature">0.3</span>
                         </div>
-                        <span class="setting-value" id="val-temperature">0.3</span>
+                        <input type="range" class="setting-slider" id="cfg-temperature" min="0" max="2" step="0.05"
+                            value="0.3">
+                        <div class="setting-hints"><span>Deterministic</span><span>Creative</span></div>
                     </div>
-                    <input type="range" class="setting-slider" id="cfg-temperature" min="0" max="2" step="0.05"
-                        value="0.3">
-                    <div class="setting-hints"><span>Deterministic</span><span>Creative</span></div>
-                </div>
 
-                <div class="setting-row">
-                    <div class="setting-label">
-                        <span>Top P</span>
-                        <div class="setting-info-icon"
-                            data-tooltip="Nucleus sampling: only considers tokens with a cumulative probability of P. Helps maintain coherence.">
-                            <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <span>Top P</span>
+                            <div class="setting-info-icon"
+                                data-tooltip="Nucleus sampling: only considers tokens with a cumulative probability of P. Helps maintain coherence.">
+                                <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                            </div>
+                            <span class="setting-value" id="val-top-p">0.9</span>
                         </div>
-                        <span class="setting-value" id="val-top-p">0.9</span>
+                        <input type="range" class="setting-slider" id="cfg-top-p" min="0" max="1" step="0.05"
+                            value="0.9">
+                        <div class="setting-hints"><span>0</span><span>1.0</span></div>
                     </div>
-                    <input type="range" class="setting-slider" id="cfg-top-p" min="0" max="1" step="0.05" value="0.9">
-                    <div class="setting-hints"><span>0</span><span>1.0</span></div>
-                </div>
 
-                <div class="setting-row">
-                    <div class="setting-label">
-                        <span>Repetition Penalty</span>
-                        <div class="setting-info-icon"
-                            data-tooltip="Discourages the model from repeating the same phrases or words in its output.">
-                            <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <span>Repetition Penalty</span>
+                            <div class="setting-info-icon"
+                                data-tooltip="Discourages the model from repeating the same phrases or words in its output.">
+                                <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                            </div>
+                            <span class="setting-value" id="val-rep-penalty">1.1</span>
                         </div>
-                        <span class="setting-value" id="val-rep-penalty">1.1</span>
+                        <input type="range" class="setting-slider" id="cfg-rep-penalty" min="1" max="1.5" step="0.05"
+                            value="1.1">
+                        <div class="setting-hints"><span>None</span><span>Strong</span></div>
                     </div>
-                    <input type="range" class="setting-slider" id="cfg-rep-penalty" min="1" max="1.5" step="0.05"
-                        value="1.1">
-                    <div class="setting-hints"><span>None</span><span>Strong</span></div>
                 </div>
-            </div>
 
-            <!-- Document and Media Settings -->
-            <div class="settings-section">
-                <h3 class="settings-section-title">📄 Document & Media</h3>
+                <!-- Document and Media Settings -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">📄 Document & Media</h3>
 
-                <div class="setting-row">
-                    <div class="setting-label">
-                        <span>PDF Text Batch Size</span>
-                        <div class="setting-info-icon"
-                            data-tooltip="Number of text chunks from digital PDFs to include in the context window.">
-                            <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <span>PDF Text Batch Size</span>
+                            <div class="setting-info-icon"
+                                data-tooltip="Number of text chunks from digital PDFs to include in the context window.">
+                                <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                            </div>
+                            <span class="setting-value" id="val-pdf-text-batch">50</span>
                         </div>
-                        <span class="setting-value" id="val-pdf-text-batch">50</span>
+                        <input type="range" class="setting-slider" id="cfg-pdf-text-batch" min="10" max="500" step="10"
+                            value="50">
+                        <div class="setting-hints"><span>10</span><span>500 chunks</span></div>
                     </div>
-                    <input type="range" class="setting-slider" id="cfg-pdf-text-batch" min="10" max="500" step="10"
-                        value="50">
-                    <div class="setting-hints"><span>10</span><span>500 chunks</span></div>
-                </div>
 
-                <div class="setting-row">
-                    <div class="setting-label">
-                        <span>Search Similarity Threshold</span>
-                        <div class="setting-info-icon"
-                            data-tooltip="Minimum relevance score for RAG search. Higher values (0.5+) filter out less relevant chunks.">
-                            <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <span>Search Similarity Threshold</span>
+                            <div class="setting-info-icon"
+                                data-tooltip="Minimum relevance score for RAG search. Higher values (0.5+) filter out less relevant chunks.">
+                                <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                            </div>
+                            <span class="setting-value" id="val-rag-similarity-threshold">0.3</span>
                         </div>
-                        <span class="setting-value" id="val-rag-similarity-threshold">0.3</span>
+                        <input type="range" class="setting-slider" id="cfg-rag-similarity-threshold" min="0.1" max="0.9"
+                            step="0.05" value="0.3">
+                        <div class="setting-hints"><span>0.1</span><span>0.9</span></div>
                     </div>
-                    <input type="range" class="setting-slider" id="cfg-rag-similarity-threshold" min="0.1" max="0.9"
-                        step="0.05" value="0.3">
-                    <div class="setting-hints"><span>0.1</span><span>0.9</span></div>
-                </div>
 
-                <div class="setting-row">
-                    <div class="setting-label">
-                        <span>PDF Vision Batch Size</span>
-                        <div class="setting-info-icon"
-                            data-tooltip="Number of PDF pages converted to images per turn for Vision models (uses more VRAM).">
-                            <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <span>PDF Vision Batch Size</span>
+                            <div class="setting-info-icon"
+                                data-tooltip="Number of PDF pages converted to images per turn for Vision models (uses more VRAM).">
+                                <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                            </div>
+                            <span class="setting-value" id="val-pdf-image-batch">5</span>
                         </div>
-                        <span class="setting-value" id="val-pdf-image-batch">5</span>
+                        <input type="range" class="setting-slider" id="cfg-pdf-image-batch" min="1" max="50" step="1"
+                            value="5">
+                        <div class="setting-hints"><span>1</span><span>50 pages</span></div>
                     </div>
-                    <input type="range" class="setting-slider" id="cfg-pdf-image-batch" min="1" max="50" step="1"
-                        value="5">
-                    <div class="setting-hints"><span>1</span><span>50 pages</span></div>
-                </div>
 
-                <div class="setting-row">
-                    <div class="setting-label">
-                        <span>Image Gen. Resolution</span>
-                        <div class="setting-info-icon"
-                            data-tooltip="Dimensions for FLUX image generation. Higher resolutions require more VRAM and time.">
-                            <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <span>Image Gen. Resolution</span>
+                            <div class="setting-info-icon"
+                                data-tooltip="Dimensions for FLUX image generation. Higher resolutions require more VRAM and time.">
+                                <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                            </div>
+                            <span class="setting-value"></span>
                         </div>
-                        <span class="setting-value"></span>
+                        <select id="cfg-image-res"
+                            style="width: 100%; padding: 8px; border-radius: 6px; background: var(--bg-secondary); color: var(--text-color); border: 1px solid var(--border-color); margin-top: 5px;">
+                            <option value="512x512">512x512 (Fastest)</option>
+                            <option value="720x720" selected>720x720 (Balanced)</option>
+                            <option value="1024x1024">1024x1024 (Quality)</option>
+                        </select>
                     </div>
-                    <select id="cfg-image-res"
-                        style="width: 100%; padding: 8px; border-radius: 6px; background: var(--bg-secondary); color: var(--text-color); border: 1px solid var(--border-color); margin-top: 5px;">
-                        <option value="512x512">512x512 (Fastest)</option>
-                        <option value="720x720" selected>720x720 (Balanced)</option>
-                        <option value="1024x1024">1024x1024 (Quality)</option>
-                    </select>
                 </div>
-            </div>
 
-            <!-- Memory System -->
-            <div class="settings-section">
-                <h3 class="settings-section-title">🧠 Memory</h3>
+                <!-- Memory System -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">🧠 Memory</h3>
 
-                <div class="setting-row">
-                    <div class="setting-label">
-                        <span>Rolling Window Token Budget</span>
-                        <div class="setting-info-icon"
-                            data-tooltip="Number of tokens allocated to the most recent chat history for immediate context. Larger budgets improve short-term coherence.">
-                            <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <span>Rolling Window Token Budget</span>
+                            <div class="setting-info-icon"
+                                data-tooltip="Number of tokens allocated to the most recent chat history for immediate context. Larger budgets improve short-term coherence.">
+                                <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                            </div>
+                            <span class="setting-value" id="val-rolling-max-tokens">3200</span>
                         </div>
-                        <span class="setting-value" id="val-rolling-max-tokens">3200</span>
+                        <input type="range" class="setting-slider" id="cfg-rolling-max-tokens" min="2400" max="16000"
+                            step="100" value="3200">
+                        <div class="setting-hints"><span>2400 tokens</span><span>16000 tokens</span></div>
                     </div>
-                    <input type="range" class="setting-slider" id="cfg-rolling-max-tokens" min="2400" max="16000"
-                        step="100" value="3200">
-                    <div class="setting-hints"><span>2400 tokens</span><span>16000 tokens</span></div>
-                </div>
 
-                <div class="setting-row">
-                    <div class="setting-label">
-                        <span>Summary Token Budget</span>
-                        <div class="setting-info-icon"
-                            data-tooltip="Amount of space reserved for the progressive conversation summary. This preserves the 'gist' of older messages that have left the rolling window.">
-                            <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <span>Summary Token Budget</span>
+                            <div class="setting-info-icon"
+                                data-tooltip="Amount of space reserved for the progressive conversation summary. This preserves the 'gist' of older messages that have left the rolling window.">
+                                <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                            </div>
+                            <span class="setting-value" id="val-summary-max-tokens">600</span>
                         </div>
-                        <span class="setting-value" id="val-summary-max-tokens">600</span>
+                        <input type="range" class="setting-slider" id="cfg-summary-max-tokens" min="400" max="3000"
+                            step="50" value="600">
+                        <div class="setting-hints"><span>400 tokens</span><span>3000 tokens</span></div>
                     </div>
-                    <input type="range" class="setting-slider" id="cfg-summary-max-tokens" min="400" max="3000"
-                        step="50" value="600">
-                    <div class="setting-hints"><span>400 tokens</span><span>3000 tokens</span></div>
-                </div>
-            </div>
 
-            <!-- Model Library -->
-            <div class="settings-section">
-                <h3 class="settings-section-title">🤖 Model Library</h3>
-                <p class="settings-section-desc">Add a new model from HF, must be mlx compatible eg: <code>mlx-community/gemma-4-e2b-it-4bit</code>
-                    or <code>Jackrong/MLX-Qwen3.5-9B-Claude-4.6-Opus-Reasoning-Distilled-v2-4bit</code>. Deleting
-                    a model removes it from disk (<code>~/.cache/huggingface/hub/</code>). The active model cannot be
-                    deleted.</p>
-
-                <div class="settings-add-model">
-                    <input type="text" id="new-model-input" placeholder="mlx-community/Llama-3-8B-Instruct-4bit">
-                    <button id="add-model-btn" title="Add Model">
-                        <i data-lucide="plus"></i>
-                        <span>Add</span>
-                    </button>
-                </div>
-
-                <div id="model-download-progress" class="model-download-progress" style="display: none;">
-                    <div class="progress-info">
-                        <span id="progress-status">Downloading...</span>
-                        <span id="progress-percent">0%</span>
-                    </div>
-                    <div class="progress-bar-container">
-                        <div id="progress-bar-fill" class="progress-bar-fill"></div>
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <span>Context Window %</span>
+                            <div class="setting-info-icon"
+                                data-tooltip="Percentage of the model's full context window to use. Lower values reduce RAM usage but limit how much conversation history fits. The actual token count depends on the loaded model.">
+                                <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                            </div>
+                            <span class="setting-value" id="val-context-window">100%</span>
+                        </div>
+                        <input type="range" class="setting-slider" id="cfg-context-window" min="1" max="100"
+                            step="1" value="100">
+                        <div class="setting-hints"><span>1%</span><span>100%</span></div>
                     </div>
                 </div>
 
-                <div id="settings-models-list" class="settings-models-list">
-                    <!-- injected by JS -->
+                <!-- Model Library -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">🤖 Model Library</h3>
+                    <p class="settings-section-desc">Add a new model from <a
+                            href="https://huggingface.co/models?library=mlx&sort=trending" target="_blank">Hugging
+                            Face</a>, must be mlx compatible eg:
+                        <code>mlx-community/gemma-4-e2b-it-4bit</code>
+                        or <code>Jackrong/MLX-Qwen3.5-9B-Claude-4.6-Opus-Reasoning-Distilled-v2-4bit</code>. Deleting
+                        a model removes it from disk (<code>~/.cache/huggingface/hub/</code>).
+                    </p>
+
+                    <div class="settings-add-model">
+                        <input type="text" id="new-model-input" placeholder="mlx-community/Llama-3-8B-Instruct-4bit">
+                        <button id="add-model-btn" title="Add Model">
+                            <i data-lucide="plus"></i>
+                            <span>Add</span>
+                        </button>
+                    </div>
+
+                    <div id="model-download-progress" class="model-download-progress" style="display: none;">
+                        <div class="progress-info">
+                            <span id="progress-status">Downloading...</span>
+                            <span id="progress-percent">0%</span>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div id="progress-bar-fill" class="progress-bar-fill"></div>
+                        </div>
+                    </div>
+
+                    <div id="settings-models-list" class="settings-models-list">
+                        <!-- injected by JS -->
+                    </div>
                 </div>
-            </div>
             </div><!-- /settings-body -->
             <div class="settings-footer">
                 <button class="settings-reset-btn" id="settings-reset-btn" title="Reset all settings to defaults">

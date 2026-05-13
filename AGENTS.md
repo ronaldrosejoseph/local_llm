@@ -169,7 +169,7 @@ The chat endpoint uses a two-layer memory system instead of sending the entire c
 - **Rolling Window** — Token-budget-aware: fills recent messages newest-first until the context budget is spent. Provides short-term conversational coherence.
 - **Progressive Summary** — Older messages that fall out of the rolling window are incrementally summarized by the LLM and stored on the `chats.summary` column. Runs asynchronously post-generation.
 - **Context Assembly** (`assemble_context()`) allocates the model's context window as: system prompt → summary → rolling window → current message, with generation headroom reserved.
-- Configurable via `config.json`: `rolling_window_max_tokens`, `summary_max_tokens`.
+- Configurable via `config.json`: `rolling_window_max_tokens`, `summary_max_tokens`, `context_window_pct` (1-100% of model's full context — lower = less RAM).
 
 ### Dynamic Title Refinement
 The chat title evolves as the conversation progresses to maintain relevance:
@@ -224,7 +224,8 @@ chats (id TEXT PK, title TEXT, created_at TIMESTAMP, updated_at TIMESTAMP, syste
 
 -- Messages within chats
 messages (id INTEGER PK, chat_id TEXT FK, role TEXT, content TEXT, timestamp TIMESTAMP,
-         embedding BLOB)  -- Vector memory (turn-pair embeddings stored as numpy float32)
+         embedding BLOB, generation_time_ms INTEGER, token_count INTEGER)
+         -- Vector memory + generation stats for assistant messages
 
 -- Available models in the library
 models (id INTEGER PK, name TEXT UNIQUE, active BOOLEAN, supports_vision BOOLEAN,
@@ -274,7 +275,8 @@ The frontend reads SSE streams token-by-token. Key data fields:
 - `{model_badge: "text"}` — Temporarily changes the model name badge (during FLUX).
 - `{model_badge_restore: true}` — Restores the badge to the active LLM name.
 - `{error: "message"}` — Displays an error.
-- `{model_crash: true, fallback_model: "...", fallback_model_display: "..."}` — Worker OOM crash: frontend shows toast and reloads.
+- `{model_crash: true, fallback_model: "...", fallback_model_display: "...", detail: "..."}` — Worker OOM crash: frontend shows persistent toast with filtered crash diagnostics, removes typing indicator.
+- `{gen_stats: {tokens, time_ms, time_s, tps}}` — Generation stats emitted before `[DONE]`. Rendered in `.message-actions` as `N tokens · X.Xs · Y.Y t/s`.
 
 ---
 

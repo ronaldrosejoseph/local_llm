@@ -146,14 +146,21 @@ def assemble_context(chat_id: str, current_message: str, system_prompt: str,
 
 
 def _get_model_context_length() -> int:
-    """Get the current model's context window size.
+    """Get the current model's context window size, scaled by user config.
 
-    Reads the cached context_length from the ModelManager (set when the
-    child worker reports back after loading a model).
+    Reads the cached context_length from the ModelManager, then scales it
+    by context_window_pct (1-100). Lower percentages reduce RAM usage.
     """
-    if state.model_manager is not None and state.model_manager.context_length:
-        return state.model_manager.context_length
-    return 8192
+    from server.config import load_config
+    cfg = load_config()
+    pct = max(1, min(100, cfg.get("context_window_pct", 100)))
+
+    full = (
+        state.model_manager.context_length
+        if state.model_manager is not None and state.model_manager.context_length
+        else 8192
+    )
+    return max(1024, int(full * pct / 100))
 
 
 def _build_rolling_window(chat_id: str, token_budget: int) -> list[dict]:

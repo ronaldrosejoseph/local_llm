@@ -78,11 +78,14 @@ server/services/       → Business logic
 ### Memory system
 - Two-layer: rolling window (token-budget-aware, newest-first) + progressive summary (older messages incrementally summarized by LLM)
 - `assemble_context()` allocates: system prompt → summary → rolling window → current message, with generation headroom reserved
+- Context window size is configurable via `context_window_pct` (1-100% of the model's full context). Lower = less RAM.
 
 ### Crash recovery
 - **Server crash**: On startup, `server/app.py` checks for `.server_lifecycle` file. If present, the previous server run crashed — resets active model in DB to the safe default.
-- **Worker OOM crash**: `ModelManager` detects child process exit (stdout EOF) or unresponsiveness (ping timeout). Automatically spawns a new child with the fallback model, updates DB, notifies frontend via SSE `model_crash` event.
+- **Worker OOM crash**: `ModelManager` detects child process exit (stdout EOF) or unresponsiveness (ping timeout). Automatically spawns a new child with the fallback model, updates DB, notifies frontend via SSE `model_crash` event with the crash detail (filtered from worker stderr).
+- **Model load failure**: `ModelManager.load_model()` auto-falls back to the default model. The worker's specific error (e.g. quantization bit issues) is surfaced in a persistent toast.
 - **stop.sh**: Kills both the server process AND any orphan worker.py processes.
+- The fallback model (`gemma-4-e2b-it-4bit`) is protected from deletion in both the API and UI.
 
 ### Global state
 All server modules import `server.state` and read/write module-level attributes directly (no getters/setters). The key variables are: `MODEL_NAME`, `model_manager` (ModelManager instance), `generation_lock`, `document_store`, `rag_offsets`, `embedder_model`, `say_processes`.
@@ -90,7 +93,20 @@ All server modules import `server.state` and read/write module-level attributes 
 ### Toast notifications
 - **Never** use native `alert()` in the frontend. Import `showToast` from `./toast.js` instead.
 - Signature: `showToast(message, type = 'info', duration = 5000)`. Types: `error`, `warning`, `success`, `info`.
+- `duration = 0` makes the toast persistent (user must dismiss it manually).
+- Multi-line messages: `\n` is automatically converted to `<br>` tags. Long messages scroll (max-height 200px).
 - It's also exposed on `window.showToast` for use from Swift bridge callbacks.
+
+### Generation stats
+- Server tracks token count and generation time (from first token, excluding prefill). Saved to DB columns `generation_time_ms` and `token_count` on the `messages` table.
+- MLX-reported `tokens_per_second` is preferred over manual timing when available.
+- Frontend displays stats as `N tokens · X.Xs · Y.Y t/s` in the `.message-actions` bar. Stats persist across page reloads.
+- Image generation messages (`/imagine`, `/edit`) skip the actions bar entirely.
+
+### Model type badges
+- Models show a type badge in Settings → Model Library: **VLM** (vision), **LM** (text-only), **?** (not yet loaded).
+- Type is determined by the worker's actual load result (`mlx_vlm` vs `mlx_lm`), not config.json heuristics.
+- `ModelManager.load_model()` persists the type to DB (`supports_vision` column). Only fills in NULL values — never overwrites confirmed types.
 
 ### Environment
 - `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1` are set at the top of `server.py` before any HF imports

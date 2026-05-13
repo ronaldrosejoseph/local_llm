@@ -38,5 +38,7 @@ def update_config(data: ConfigUpdate):
         cfg["rolling_window_max_tokens"] = max(0, min(16384, int(data.rolling_window_max_tokens)))
     if data.summary_max_tokens is not None:
         cfg["summary_max_tokens"] = max(0, min(3000, int(data.summary_max_tokens)))
+    if data.context_window_pct is not None:
+        cfg["context_window_pct"] = max(1, min(100, int(data.context_window_pct)))
     save_config(cfg)
     return cfg

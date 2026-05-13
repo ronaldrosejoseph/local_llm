@@ -204,11 +204,15 @@ export async function sendMessage(text = null) {
                                     actionsDiv = document.createElement('div');
                                     actionsDiv.className = 'message-actions';
                                     actionsDiv.style.cssText = 'margin-top: 5px; opacity: 0.5; display: flex; gap: 10px; align-items: center;';
-                                    actionsDiv.innerHTML = `
-                                        <button onclick="speakResponse(this.parentElement.previousElementSibling.textContent)" title="Read out loud" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="volume-2" style="width: 14px; height: 14px;"></i></button>
-                                        <button onclick="stopSpeaking()" title="Stop speaking" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="square" style="width: 14px; height: 14px;"></i></button>
-                                        <button onclick="copyToClipboard(this.parentElement.previousElementSibling.textContent, this)" title="Copy to clipboard" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="copy" style="width: 14px; height: 14px;"></i></button>
-                                    `;
+                                    // Skip speak/copy buttons for image generation results
+                                    const isImageGen = fullContent.trim().startsWith('![');
+                                    if (!isImageGen) {
+                                        actionsDiv.innerHTML = `
+                                            <button onclick="speakResponse(this.parentElement.previousElementSibling.textContent)" title="Read out loud" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="volume-2" style="width: 14px; height: 14px;"></i></button>
+                                            <button onclick="stopSpeaking()" title="Stop speaking" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="square" style="width: 14px; height: 14px;"></i></button>
+                                            <button onclick="copyToClipboard(this.parentElement.previousElementSibling.textContent, this)" title="Copy to clipboard" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="copy" style="width: 14px; height: 14px;"></i></button>
+                                        `;
+                                    }
                                     assistantMessageDiv.appendChild(actionsDiv);
                                     elements.messagesContainer.appendChild(assistantMessageDiv);
                                     lucide.createIcons({ elements: Array.from(actionsDiv.querySelectorAll('[data-lucide]')) });
@@ -243,7 +247,7 @@ export async function sendMessage(text = null) {
             if (typingIndicator) typingIndicator.remove();
         } else {
             if (typingIndicator) typingIndicator.remove();
-            appendMessage('assistant', 'Sorry, I encountered an error. Please make sure the server is running with the MLX model.');
+            appendMessage('assistant', 'Sorry, I encountered an error. Please restart the server/app and try again.');
             console.error('Error:', error);
         }
     } finally {

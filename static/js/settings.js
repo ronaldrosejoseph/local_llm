@@ -33,6 +33,7 @@ export async function resetSettings() {
         image_generation_resolution: '720x720',
         rolling_window_max_tokens: 3200,
         summary_max_tokens: 600,
+        context_window_pct: 100,
     };
 
     try {
@@ -81,6 +82,11 @@ function applyConfigToUI(cfg) {
     set('cfg-image-res', null, cfg.image_generation_resolution || "720x720");
     set('cfg-rolling-max-tokens', 'val-rolling-max-tokens', cfg.rolling_window_max_tokens ?? 3200);
     set('cfg-summary-max-tokens', 'val-summary-max-tokens', cfg.summary_max_tokens ?? 600);
+    set('cfg-context-window', 'val-context-window', cfg.context_window_pct ?? 100);
+    // Override the raw number display with percentage label
+    const ctxVal = document.getElementById('val-context-window');
+    const ctxSlider = document.getElementById('cfg-context-window');
+    if (ctxVal && ctxSlider) ctxVal.textContent = ctxSlider.value + '%';
 }
 
 function scheduleConfigSave(patch) {
@@ -141,6 +147,10 @@ export function initConfigSliders() {
     document.getElementById('cfg-summary-max-tokens').addEventListener('input', function () {
         document.getElementById('val-summary-max-tokens').textContent = this.value;
         scheduleConfigSave({ summary_max_tokens: parseInt(this.value) });
+    });
+    document.getElementById('cfg-context-window').addEventListener('input', function () {
+        document.getElementById('val-context-window').textContent = this.value + '%';
+        scheduleConfigSave({ context_window_pct: parseInt(this.value) });
     });
 }
 

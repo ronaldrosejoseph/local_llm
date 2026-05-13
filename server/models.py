@@ -39,6 +39,7 @@ class ConfigUpdate(BaseModel):
     image_generation_resolution: Optional[str] = None
     rolling_window_max_tokens: Optional[int] = None
     summary_max_tokens: Optional[int] = None
+    context_window_pct: Optional[int] = None
 
 
 class ModelAdd(BaseModel):

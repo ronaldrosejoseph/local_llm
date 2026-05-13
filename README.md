@@ -30,6 +30,8 @@ This application transforms your machine into a fully private AI workstation:
 - **Local & Private**: All inference, embedding, and chat history stay 100% locally on your machine.
 - **Persistent Memory**: Chat histories are saved securely to a SQLite database and can be resumed at any time.
 - **Dynamic Chat Titles**: Titles are auto-generated from your first message and automatically refine themselves every 3 turns. The system uses a tiered strategy (First Msg → Recent Context → Progressive Summary) to ensure the title always reflects the current topic.
+- **Reusable System Prompts**: 24 built-in persona templates (Professors, Financial Analysts, Chefs, etc.) that can be searched, loaded, modified, and saved. Create your own templates and reuse them across chats.
+- **Generation Stats**: Token count and tokens-per-second are displayed after every assistant response and persist across sessions.
 
 ### 🔍 Advanced Tooling
 - **Live Web Search (`/web`)**: 
@@ -78,6 +80,7 @@ This application transforms your machine into a fully private AI workstation:
   - **Progressive Summarization**: As messages "fall out" of the rolling window, the LLM automatically condenses them into a long-term "Progressive Summary" that persists indefinitely, ensuring the AI never forgets the core facts of a 100+ message thread.
 - **Crash Recovery (Self-Healing)**: 
   - If the server crashes (e.g., due to an OOM on a massive model), it will automatically detect the crash on next boot and reset the active model to the lightweight `gemma-4-e2b` safe default. No more getting stuck in a crash loop!
+      - **Live OOM Protection**: Models run in a separate child process. If a model runs out of memory mid-generation, only the worker crashes — the server stays alive, auto-recovers with the fallback model, and shows a detailed error toast with the exact crash cause (e.g. Metal Insufficient Memory).
 
 ---
 

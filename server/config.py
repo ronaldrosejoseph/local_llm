@@ -17,6 +17,7 @@ DEFAULT_CONFIG = {
     "image_generation_resolution": "720x720",
     "rolling_window_max_tokens": 3200, # Max tokens for recent messages before falling back to summary
     "summary_max_tokens": 600,     # Max tokens for progressive chat summary
+    "context_window_pct": 100,     # % of model's context window to use. Lower = less RAM
 }
 
 
