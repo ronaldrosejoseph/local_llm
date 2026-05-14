@@ -381,6 +381,24 @@
                         <!-- injected by JS -->
                     </div>
                 </div>
+
+                <!-- HuggingFace Token -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">🔑 HuggingFace Token</h3>
+                    <p class="settings-section-desc">Required for gated models (e.g. FLUX.1). Stored securely in macOS Keychain.</p>
+                    <div class="settings-add-model">
+                        <input type="password" id="hf-token-input" placeholder="hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+                        <button id="hf-token-save-btn" title="Verify & Save Token">
+                            <i data-lucide="key"></i>
+                            <span>Save</span>
+                        </button>
+                    </div>
+                    <div id="hf-token-status" style="font-size:12px; margin-top:8px; min-height:18px;"></div>
+                    <button id="hf-token-delete-btn" style="display:none; background: transparent; border: 1px solid rgba(255,85,85,0.3); color: #ff5555; padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; margin-top: 6px;">
+                        <i data-lucide="trash-2" style="width:13px;height:13px;"></i> Remove Token
+                    </button>
+                </div>
+
             </div><!-- /settings-body -->
             <div class="settings-footer">
                 <button class="settings-reset-btn" id="settings-reset-btn" title="Reset all settings to defaults">

@@ -229,3 +229,99 @@ async function confirmDeleteModel(modelName, btn) {
         lucide.createIcons({ elements: [btn.querySelector('[data-lucide]')] });
     }
 }
+
+// --- HuggingFace Token Management ---
+
+async function checkHfTokenStatus() {
+    try {
+        const res = await fetch(`${API_URL}/api/hf-token/status`);
+        const data = await res.json();
+        const input = document.getElementById('hf-token-input');
+        const saveBtn = document.getElementById('hf-token-save-btn');
+        const deleteBtn = document.getElementById('hf-token-delete-btn');
+        const statusEl = document.getElementById('hf-token-status');
+
+        if (data.stored) {
+            input.value = '';
+            input.placeholder = 'Token stored in Keychain';
+            input.disabled = true;
+            saveBtn.disabled = true;
+            saveBtn.style.opacity = '0.4';
+            deleteBtn.style.display = 'inline-flex';
+            statusEl.textContent = '✅ Token is stored securely in macOS Keychain. Remove it to add a new one.';
+            statusEl.style.color = '#50fa7b';
+        } else {
+            input.placeholder = 'hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+            input.disabled = false;
+            saveBtn.disabled = false;
+            saveBtn.style.opacity = '1';
+            deleteBtn.style.display = 'none';
+            statusEl.textContent = '';
+        }
+    } catch (err) {
+        console.error('HF token status check failed:', err);
+    }
+}
+
+async function saveHfToken() {
+    const input = document.getElementById('hf-token-input');
+    const saveBtn = document.getElementById('hf-token-save-btn');
+    const statusEl = document.getElementById('hf-token-status');
+    const token = input.value.trim();
+
+    if (!token) {
+        showToast('Enter a HuggingFace token.', 'warning');
+        return;
+    }
+
+    input.disabled = true;
+    saveBtn.disabled = true;
+    statusEl.textContent = 'Verifying token...';
+    statusEl.style.color = 'var(--text-muted)';
+
+    try {
+        const res = await fetch(`${API_URL}/api/hf-token/save`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token }),
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            showToast(data.message, 'success');
+            input.value = '';
+            await checkHfTokenStatus();
+        } else {
+            const err = await res.json();
+            statusEl.textContent = `❌ ${err.detail}`;
+            statusEl.style.color = '#ff5555';
+            showToast(err.detail, 'error', 0);
+            input.disabled = false;
+            saveBtn.disabled = false;
+        }
+    } catch (err) {
+        statusEl.textContent = `❌ ${err.message}`;
+        statusEl.style.color = '#ff5555';
+        showToast(`Failed to save token: ${err.message}`, 'error');
+        input.disabled = false;
+        saveBtn.disabled = false;
+    }
+}
+
+async function deleteHfToken() {
+    if (!confirm('Remove the stored HuggingFace token?')) return;
+
+    try {
+        await fetch(`${API_URL}/api/hf-token`, { method: 'DELETE' });
+        showToast('Token removed.', 'success');
+        await checkHfTokenStatus();
+    } catch (err) {
+        showToast(`Failed to remove token: ${err.message}`, 'error');
+    }
+}
+
+export function initHfTokenUI() {
+    checkHfTokenStatus();
+    document.getElementById('hf-token-save-btn').addEventListener('click', saveHfToken);
+    document.getElementById('hf-token-delete-btn').addEventListener('click', deleteHfToken);
+}

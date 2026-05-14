@@ -29,6 +29,15 @@ from server.services.model_manager import InferenceCrash
 router = APIRouter()
 
 
+def _check_hf_token() -> bool:
+    """Return True if an HF token is stored in the keyring."""
+    try:
+        from server.services.hf_auth import has_token
+        return has_token()
+    except Exception:
+        return False
+
+
 @router.get("/api/chats")
 def get_chats(q: Optional[str] = None):
     with closing(get_db_connection()) as conn:
@@ -323,6 +332,18 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
 
     # --- Image Generation: /imagine ---
     if message_content.strip().startswith("/imagine"):
+        if not _check_hf_token():
+            async def no_token_gen():
+                msg = (
+                    "**⚠️ HuggingFace Token Required**\n\n"
+                    "To use `/imagine`, add your HuggingFace token in "
+                    "**Settings → 🔑 HuggingFace Token**. "
+                    "It's stored securely in your macOS Keychain."
+                )
+                yield f"data: {json.dumps({'chat_id': chat_id})}\n\n"
+                yield f"data: {json.dumps({'content': msg})}\n\n"
+                yield 'data: [DONE]\n\n'
+            return StreamingResponse(no_token_gen(), media_type="text/event-stream")
         prompt = message_content.strip()[8:].strip()
         print(f"Triggering image generation for: {prompt}")
 
@@ -344,6 +365,18 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
 
     # --- Image Editing: /edit ---
     if message_content.strip().startswith("/edit"):
+        if not _check_hf_token():
+            async def no_token_gen():
+                msg = (
+                    "**⚠️ HuggingFace Token Required**\n\n"
+                    "To use `/edit`, add your HuggingFace token in "
+                    "**Settings → 🔑 HuggingFace Token**. "
+                    "It's stored securely in your macOS Keychain."
+                )
+                yield f"data: {json.dumps({'chat_id': chat_id})}\n\n"
+                yield f"data: {json.dumps({'content': msg})}\n\n"
+                yield 'data: [DONE]\n\n'
+            return StreamingResponse(no_token_gen(), media_type="text/event-stream")
         prompt = message_content.strip()[5:].strip()
         print(f"Triggering image editing for: {prompt}")
 

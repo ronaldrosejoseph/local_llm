@@ -16,6 +16,7 @@ from server.routes.documents import router as documents_router
 from server.routes.config_routes import router as config_router
 from server.routes.speech import router as speech_router
 from server.routes.system_prompt_routes import router as system_prompt_router
+from server.routes.hf_token_routes import router as hf_token_router
 
 app = FastAPI()
 
@@ -26,6 +27,7 @@ app.include_router(documents_router)
 app.include_router(config_router)
 app.include_router(speech_router)
 app.include_router(system_prompt_router)
+app.include_router(hf_token_router)
 
 # Server Lifecycle Check (Crash Recovery)
 LIFECYCLE_FILE = ".server_lifecycle"
@@ -42,9 +44,13 @@ with open(LIFECYCLE_FILE, "w") as f:
 
 @app.on_event("startup")
 async def startup():
-    """Initialize the model manager and load the active model."""
+    """Initialize the model manager, load HF token, and load the active model."""
     from server.services.model_manager import ModelManager
+    from server.services.hf_auth import load_hf_token
     from server import state
+
+    # Load HF token from keyring at startup
+    load_hf_token()
 
     manager = ModelManager()
     state.model_manager = manager

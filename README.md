@@ -60,7 +60,8 @@ This application transforms your machine into a fully private AI workstation:
 > **Important FLUX.1 Authentication Step**: 
 > The advanced image generation engine requires access to the `FLUX.1-schnell` repository owned by Black Forest Labs. Because this repository is **gated**, your server will crash with a `401 Unauthorized` HTTP error unless you authenticate.
 > 1. Log into your Hugging Face account, navigate to [FLUX.1-schnell](https://huggingface.co/black-forest-labs/FLUX.1-schnell), and **explicitly click the "Agree to access repository" button** on their model card. (Generating a token is not enough; your account must independently accept their terms).
-> 2. Open a local terminal and natively authenticate your Mac by running: 
+> 2. Add your token in the app: open **Settings → 🔑 HuggingFace Token**, paste your token (`hf_...`), and click **Save**. The token is verified and stored securely in your **macOS Keychain** (never in plaintext). Using `/imagine` or `/edit` without a token shows a reminder.
+> 3. Alternatively, authenticate via terminal:
 > ```bash
 > ./venv/bin/python3 -c "from huggingface_hub import login; login(token='YOUR_HF_TOKEN')"
 > ```

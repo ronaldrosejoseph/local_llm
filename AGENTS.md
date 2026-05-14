@@ -70,6 +70,8 @@
 | `server/routes/config_routes.py` | Generation config GET/PATCH. |
 | `server/routes/speech.py` | TTS via macOS `say` command. |
 | `server/routes/system_prompt_routes.py` | System prompt template CRUD: search, save, update, delete reusable personas. |
+| `server/routes/hf_token_routes.py` | HF token management: verify, save (to Keychain), delete, status check. |
+| `server/services/hf_auth.py` | Secure token storage via `keyring` (macOS Keychain). `verify_token()` uses direct HTTP to bypass offline mode. |
 
 ### Frontend
 
@@ -131,6 +133,10 @@
 | `POST` | `/api/system-prompts` | Save a new system prompt template |
 | `PUT` | `/api/system-prompts/{id}` | Update an existing template |
 | `DELETE` | `/api/system-prompts/{id}` | Delete a template |
+| `GET` | `/api/hf-token/status` | Check if an HF token is stored in the Keychain |
+| `POST` | `/api/hf-token/verify` | Verify a token without saving it |
+| `POST` | `/api/hf-token/save` | Verify and save a token to the Keychain |
+| `DELETE` | `/api/hf-token` | Remove the stored token |
 
 ---
 
@@ -312,6 +318,8 @@ The frontend reads SSE streams token-by-token. Key data fields:
 - `fastapi` + `uvicorn` — Web server
 - `PyPDF2` + `pymupdf` (fitz) — PDF text extraction and page-to-image conversion
 - `huggingface_hub` — Model discovery and download
+- `keyring` — Secure token storage in macOS Keychain
 
 ### Environment Variables
 - `HF_HUB_OFFLINE` / `TRANSFORMERS_OFFLINE` — Set to `"1"` at startup in `server.py` to prevent network requests. Temporarily set to `"0"` during model downloads.
+- `HF_TOKEN` — Set at startup from the Keychain (via `hf_auth.load_hf_token()`). Passed to the worker subprocess and used by FLUX image generation. Managed via Settings → 🔑 HuggingFace Token.

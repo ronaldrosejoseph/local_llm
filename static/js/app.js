@@ -10,7 +10,7 @@ import { initMarked, initScrollTracking, copyCode, copyToClipboard } from './uti
 import { sendMessage, stopGeneration, updateRagStatusUI } from './chat.js';
 import { loadChatHistory, startNewChat, hideDeleteModal, toggleSidebar, closeSidebar } from './sidebar.js';
 import { loadModels, addNewModel, switchModel } from './models.js';
-import { openSettings, closeSettings, loadConfig, initConfigSliders, resetSettings } from './settings.js';
+import { openSettings, closeSettings, loadConfig, initConfigSliders, resetSettings, initHfTokenUI } from './settings.js';
 import { initDocumentUpload } from './documents.js';
 import { speakResponse, stopSpeaking, toggleRecording, initSpeechRecognition } from './speech.js';
 import { loadSystemPrompt, saveSystemPrompt, toggleSystemPrompt, initSystemPromptSearch } from './system_prompt.js';
@@ -202,3 +202,4 @@ initConfigSliders();
 initDocumentUpload();
 initSpeechRecognition();
 initSystemPromptSearch();
+initHfTokenUI();

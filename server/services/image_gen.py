@@ -34,6 +34,13 @@ def run_flux_pipeline(prompt: str, chat_id: str, q: queue.Queue, img_name: str,
     """
     state.generation_lock.acquire()
     try:
+        # Ensure HF token is active for gated model access (FLUX.1)
+        try:
+            from server.services.hf_auth import load_hf_token
+            load_hf_token()
+        except Exception:
+            pass
+
         from mflux.models.common.config import ModelConfig
         from mflux.models.flux.variants.txt2img.flux import Flux1
         from mflux.callbacks.callback import InLoopCallback

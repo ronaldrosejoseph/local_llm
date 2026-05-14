@@ -317,13 +317,19 @@ class ModelManager:
         worker_path = str(_WORKER_PATH)
         python_exe = sys.executable
 
+        # Pass HF_TOKEN to the worker process (for gated model access)
+        env = os.environ.copy()
+        if os.environ.get("HF_TOKEN"):
+            env["HF_TOKEN"] = os.environ["HF_TOKEN"]
+
         self.process = subprocess.Popen(
             [python_exe, worker_path],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,  # captured so stderr doesn't leak into IPC
+            stderr=subprocess.PIPE,
             text=True,
             bufsize=1,  # line-buffered
+            env=env,
         )
         print(f"ModelManager: spawned worker PID={self.process.pid}", file=sys.stderr)
 
