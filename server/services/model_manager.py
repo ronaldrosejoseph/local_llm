@@ -79,11 +79,9 @@ class ModelManager:
         model_name = row["name"] if row else state.DEFAULT_MODEL
 
         success, name = await self.load_model(model_name)
-        if not success:
-            # Fallback to default
-            print(f"ModelManager: failed to load {model_name}, falling back to {state.DEFAULT_MODEL}", file=sys.stderr)
-            success, name = await self.load_model(state.DEFAULT_MODEL)
-
+        
+        # Note: load_model internally handles falling back to state.DEFAULT_MODEL
+        # if the requested model fails, so 'name' is guaranteed to be the best available model.
         state.MODEL_NAME = name
         print(f"ModelManager: started with model={name}, is_vlm={self.is_vlm}", file=sys.stderr)
 
@@ -150,7 +148,7 @@ class ModelManager:
         """Load a model in the child process. Returns (success, actual_model_name).
 
         If the requested model fails to load, automatically falls back to the
-        default model (gemma-4-e2b-it-4bit) and returns its name on failure.
+        default model and returns its name on failure.
         """
         cmd = {
             "command": "load",
@@ -158,48 +156,37 @@ class ModelManager:
             "model_name": model_name,
             "offline": offline,
         }
-        last_error = None
+        
         await self._send_raw(cmd)
+        
+        load_success = False
+        actual_name = model_name
+
         async for resp in self._read_responses(cmd["request_id"]):
             if resp.get("type") == "loaded":
                 self.model_name = resp.get("model_name", model_name)
                 self.is_vlm = resp.get("is_vlm", False)
                 self.context_length = resp.get("context_length", 8192)
                 _update_model_type_in_db(model_name, self.is_vlm)
-                return True, self.model_name
+                load_success = True
+                actual_name = self.model_name
+                break
             elif resp.get("type") == "error":
-                last_error = resp.get("message", "")
-                self._last_load_error = last_error
+                self._last_load_error = resp.get("message", "Unknown error")
                 break
 
-        # Model failed — fall back to default
+        if load_success:
+            return True, actual_name
+
+        # Model failed — fall back to default if we aren't already trying to load it
         fallback = state.DEFAULT_MODEL
         if model_name != fallback:
             print(f"ModelManager: failed to load {model_name}, falling back to {fallback}", file=sys.stderr)
-            success, name = await self._load_model_internal(fallback, offline)
-            if success:
-                return False, name
+            # Recurse once to the default model. The 'if' check above prevents infinite recursion.
+            _, name = await self.load_model(fallback, offline)
+            return False, name
+            
         return False, fallback
-
-    async def _load_model_internal(self, model_name: str, offline: bool = True) -> tuple[bool, str]:
-        """Load a model without fallback (used internally to load the default)."""
-        cmd = {
-            "command": "load",
-            "request_id": str(uuid.uuid4()),
-            "model_name": model_name,
-            "offline": offline,
-        }
-        await self._send_raw(cmd)
-        async for resp in self._read_responses(cmd["request_id"]):
-            if resp.get("type") == "loaded":
-                self.model_name = resp.get("model_name", model_name)
-                self.is_vlm = resp.get("is_vlm", False)
-                self.context_length = resp.get("context_length", 8192)
-                _update_model_type_in_db(model_name, self.is_vlm)
-                return True, self.model_name
-            elif resp.get("type") == "error":
-                return False, model_name
-        return False, model_name
 
     async def unload_model(self):
         """Tell the child to unload its model (frees VRAM for FLUX)."""
