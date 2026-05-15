@@ -3,6 +3,7 @@ Model management routes — list, add, switch, and delete models.
 """
 
 import os
+import sys
 import sqlite3
 import queue
 import threading
@@ -190,6 +191,25 @@ async def set_active_model(model_data: ModelAdd):
                 conn.execute("UPDATE models SET active = 1 WHERE name = ?", (actual_name,))
                 conn.commit()
 
+            # --- First-load thinking model detection ---
+            if success and actual_name != state.DEFAULT_MODEL:
+                with closing(get_db_connection()) as conn:
+                    row = conn.execute(
+                        "SELECT has_thinking FROM models WHERE name = ?",
+                        (actual_name,),
+                    ).fetchone()
+                if row and row["has_thinking"] is None:
+                    result_q.put({"status": "detecting", "message": "Detecting model capabilities..."})
+                    try:
+                        has_thinking, end_tag = state.model_manager.sync_detect_thinking(actual_name)
+                        if has_thinking:
+                            result_q.put({"status": "detected_thinking", "message": f"Thinking model detected — end tag: {end_tag}"})
+                        else:
+                            result_q.put({"status": "detected_non_thinking", "message": "Non-thinking model confirmed"})
+                    except Exception as e:
+                        print(f"Thinking detection failed for {actual_name}: {e}", file=sys.stderr)
+                        result_q.put({"status": "detection_failed", "message": "Capability detection skipped"})
+
             payload = {
                 "status": "ready",
                 "model": actual_name.split("/")[-1],
@@ -230,8 +250,11 @@ async def set_active_model(model_data: ModelAdd):
             try:
                 msg = result_q.get_nowait()
                 yield f"data: {json.dumps(msg)}\n\n"
-                yield "data: [DONE]\n\n"
-                return
+                # Only terminate on terminal statuses; intermediate
+                # messages like "detecting" / "detected_*" pass through.
+                if msg.get("status") in ("ready", "error"):
+                    yield "data: [DONE]\n\n"
+                    return
             except queue.Empty:
                 pass
 

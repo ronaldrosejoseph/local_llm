@@ -6,6 +6,7 @@ generation, health checks, and crash recovery.
 """
 
 import os
+import re
 import sys
 import gc
 import json
@@ -79,7 +80,7 @@ class ModelManager:
         model_name = row["name"] if row else state.DEFAULT_MODEL
 
         success, name = await self.load_model(model_name)
-        
+
         # Note: load_model internally handles falling back to state.DEFAULT_MODEL
         # if the requested model fails, so 'name' is guaranteed to be the best available model.
         state.MODEL_NAME = name
@@ -156,9 +157,9 @@ class ModelManager:
             "model_name": model_name,
             "offline": offline,
         }
-        
+
         await self._send_raw(cmd)
-        
+
         load_success = False
         actual_name = model_name
 
@@ -185,7 +186,7 @@ class ModelManager:
             # Recurse once to the default model. The 'if' check above prevents infinite recursion.
             _, name = await self.load_model(fallback, offline)
             return False, name
-            
+
         return False, fallback
 
     async def unload_model(self):
@@ -294,6 +295,76 @@ class ModelManager:
             self._loop,
         )
         return future.result(timeout=timeout)
+
+    # ------------------------------------------------------------------
+    # Thinking model detection
+    # ------------------------------------------------------------------
+
+    # Known end-tag patterns used by thinking/reasoning models.
+    # These appear after the internal chain-of-thought and before the final reply.
+    _THINKING_END_PATTERNS = re.compile(
+        r'(</think>|'           # DeepSeek-R1, Qwen (QwQ), most common
+        r'<channel\|>|'         # IBM Granite 3.x
+        r'◁/think▷|'            # alternative encoded think tag
+        r'<\|end\|>|'           # some custom distilled models
+        r'<unused95>|'          # legacy distilled model marker
+        r'</thinking>|'         # Llama-based reasoning
+        r'</reasoning>|'        # generic reasoning wrapper
+        r'</thought>|'          # older / alternate naming
+        r'</answer>|'           # some chat templates
+        r'</response>)'         # Claude-style thinking wrapper
+    )
+
+    def sync_detect_thinking(self, model_name: str, timeout: float = 120) -> tuple[bool, str | None]:
+        """Detect model capabilities on first load.
+
+        Sends a short prompt then scans the response for thinking end-tag
+        patterns. Also persists VLM/LM type determined by the worker during
+        loading (so supports_vision is never left NULL).
+
+        Returns (has_thinking, thinking_end_tag).
+        Side effect: persists thinking + vision info to the models table.
+        """
+        # Persist VLM type (worker determined this during load)
+        _update_model_type_in_db(model_name, self.is_vlm)
+
+        # Use a generous token budget — thinking models burn tokens on
+        # chain-of-thought before emitting the end tag.
+        hi_response = self.sync_nonstream_generate(
+            [{"role": "user", "content": "Hi! Just say hello briefly."}],
+            is_vlm=self.is_vlm,
+            max_tokens=1024,
+            timeout=60,
+        )
+        if not hi_response:
+            self._persist_thinking_result(model_name, has_thinking=False, end_tag=None)
+            return False, None
+
+        match = self._THINKING_END_PATTERNS.search(hi_response)
+        if match:
+            end_tag = match.group(0)
+            self._persist_thinking_result(model_name, has_thinking=True, end_tag=end_tag)
+            return True, end_tag
+
+        self._persist_thinking_result(model_name, has_thinking=False, end_tag=None)
+        return False, None
+
+    def _persist_thinking_result(self, model_name: str, has_thinking: bool, end_tag: str | None):
+        """Store the thinking detection result in the models table.
+
+        Only updates if has_thinking is still NULL — avoids overwriting
+        a racing detection from another request (unlikely but safe).
+        """
+        try:
+            with closing(get_db_connection()) as conn:
+                conn.execute(
+                    "UPDATE models SET has_thinking = ?, thinking_end_tag = ? "
+                    "WHERE name = ? AND has_thinking IS NULL",
+                    (1 if has_thinking else 0, end_tag, model_name),
+                )
+                conn.commit()
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Internal: subprocess management

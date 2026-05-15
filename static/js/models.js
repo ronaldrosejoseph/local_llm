@@ -179,6 +179,14 @@ export async function switchModel(modelName) {
                         setBadge(data.message || 'Downloading...');
                     } else if (data.status === 'loading') {
                         setBadge(data.message || 'Loading...');
+                    } else if (data.status === 'detecting') {
+                        setBadge(data.message || 'Detecting capabilities...');
+                    } else if (data.status === 'detected_thinking') {
+                        setBadge('Thinking model ✓', false);
+                    } else if (data.status === 'detected_non_thinking') {
+                        setBadge('Model ready ✓', false);
+                    } else if (data.status === 'detection_failed') {
+                        setBadge('Switching...');
                     } else if (data.status === 'ready') {
                         if (data.fallback) {
                             showToast(

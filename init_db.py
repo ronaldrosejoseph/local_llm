@@ -97,6 +97,11 @@ def init_db():
     add_column_if_missing("chats", "title_is_fallback", "BOOLEAN DEFAULT 0")  # Track if title was non-LLM fallback
     add_column_if_missing("messages", "generation_time_ms", "INTEGER DEFAULT 0")  # Generation time (first-token → last-token)
     add_column_if_missing("messages", "token_count", "INTEGER DEFAULT 0")        # Number of tokens generated
+    add_column_if_missing("messages", "thinking_content", "TEXT")                # Thinking/reasoning trace from thinking models
+
+    # --- Thinking model detection ---
+    add_column_if_missing("models", "has_thinking", "INTEGER DEFAULT NULL")       # NULL=unchecked, 0=non-thinking, 1=thinking
+    add_column_if_missing("models", "thinking_end_tag", "TEXT")                   # e.g. "&lt;/think&gt;" for models that output thinking tags
 
     # --- System prompt templates ---
     cursor.execute("""
