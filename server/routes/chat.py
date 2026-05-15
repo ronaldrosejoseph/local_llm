@@ -89,24 +89,54 @@ async def internal_generate_title(chat_id: str):
 
         # Collect all user prompts for a lightweight full-context option
         all_user_msgs = conn.execute(
-            "SELECT content FROM messages WHERE chat_id = ? AND role = 'user' ORDER BY timestamp ASC",
+            "SELECT content FROM messages WHERE chat_id = ? AND role = 'user' ORDER BY timestamp DESC",
             (chat_id,)
         ).fetchall()
+        if not all_user_msgs:
+            return {"error": "No user messages available for title generation"}
+
         all_user_text = " | ".join([m["content"] for m in all_user_msgs])
         all_user_words = len(all_user_text.split())
+        latest_user_content = (all_user_msgs[0]["content"] or "").strip()
 
         source_text = ""
-        if all_user_words <= 40:
-            # Short conversation — use every user prompt for full context
-            source_text = all_user_text
-            print(f"Title Gen: Using all user prompts ({all_user_words} words) for {chat_id}")
+        if not chat["summary"] and all_user_words >= 6:
+            # Short conversation — include assistant responses as well so the
+            # title model has both sides of the exchange for better summaries.
+            all_msgs = conn.execute(
+                "SELECT role, content FROM messages WHERE chat_id = ? ORDER BY timestamp DESC",
+                (chat_id,)
+            ).fetchall()
+            formatted_parts = []
+            for m in all_msgs:
+                content = (m["content"] or "").strip()
+                if m["role"] == "assistant":
+                    words = content.split()
+                    if len(words) > 300:
+                        content = " ".join(words[:300]) + "…"
+                formatted_parts.append(f"{m['role'].capitalize()}: {content}")
+            source_text = "\n".join(formatted_parts) if formatted_parts else all_user_text
+            print(f"Title Gen: Using user+assistant context ({len(formatted_parts)} msgs) for {chat_id}")
         elif chat["summary"]:
-            source_text = chat["summary"]
-            print(f"Title Gen: Using Summary as source for {chat_id}")
-        else:
-            # Get last 3 turns for a more relevant recent title
+            # Include latest messages alongside the summary as a sanity check
             recent_msgs = conn.execute(
-                "SELECT role, content FROM messages WHERE chat_id = ? ORDER BY timestamp DESC LIMIT 6",
+                "SELECT role, content FROM messages WHERE chat_id = ? ORDER BY timestamp DESC LIMIT 4",
+                (chat_id,)
+            ).fetchall()
+            if len(recent_msgs) > 1:
+                latest = "\n".join([f"{m['role'].capitalize()}: {m['content']}" for m in reversed(recent_msgs)])
+                source_text = f"{chat['summary']}\n\nLatest messages:\n{latest}"
+                print(f"Title Gen: Summary + latest turns for {chat_id}")
+            else:
+                source_text = chat["summary"]
+                print(f"Title Gen: Using Summary as source for {chat_id}")
+        elif len(latest_user_content) < 7:
+            source_text = latest_user_content
+            print(f"Title Gen: Using latest user message for {chat_id}")
+        else:
+            # Get last 3-5 turns for a more relevant recent title
+            recent_msgs = conn.execute(
+                "SELECT role, content FROM messages WHERE chat_id = ? ORDER BY timestamp DESC LIMIT 10",
                 (chat_id,)
             ).fetchall()
 
@@ -115,7 +145,7 @@ async def internal_generate_title(chat_id: str):
                 print(f"Title Gen: Using Recent Context (last {len(recent_msgs)//2} turns) for {chat_id}")
             else:
                 source_text = all_user_text
-                print(f"Title Gen: Using first user message for {chat_id}")
+                print(f"Title Gen: Using user message history for {chat_id}")
 
         first_message = source_text
 
@@ -148,22 +178,14 @@ async def internal_generate_title(chat_id: str):
     #    Never blocks the main model — runs in its own MLX process.
     prompt_txt = (
         "You are a title generator. Your ONLY job is to read the text below "
+        "which is a conversation between a user and a digital assistant and "
         "and produce a short 3–6 word label that describes the TOPIC or SUBJECT.\n\n"
         "CRITICAL RULES:\n"
         "- Output a TOPIC LABEL, NOT an answer, opinion, moral, or response.\n"
-        "- Do NOT engage with the content. Do NOT be helpful. Just label it.\n"
-        "- Do NOT use: asterisks, markdown, quotes, emojis, brackets, colons, "
-        "punctuation, or any formatting.\n"
-        "- Only output the 3–6 word title. Nothing else. No explanations.\n\n"
-        "Examples of correct behavior:\n"
-        'Text: "tell me a joke very good one" → Title: Tell Me a Joke\n'
-        'Text: "what is the capital of France" → Title: Capital of France\n'
-        'Text: "write a python script to sort a list" → Title: Python List Sorting\n'
-        'Text: "how do I fix a leaking faucet" → Title: Fixing Leaking Faucet\n\n'
-        "BAD examples (DO NOT do this):\n"
-        'Text: "tell me a joke very good one" → Title: Laughing is the Best Medicine ← WRONG! This answers, not labels.\n'
-        'Text: "what is AI" → Title: AI is Transforming Our World ← WRONG! This gives an opinion, not a topic.\n\n'
-        "Now label this text with a 3–6 word topic:\n\n"
+        "- Do NOT include: think tags, reasoning tags, XML tags, or any markup.\n"
+        "- Do NOT use: emojis, asterisks, **, quotes, brackets, colons, punctuation, "
+        "or any special symbols.\n"
+        "Now label this text with a 3–6 word topic with no extra text, no formatting:\n\n"
         f"{clean_text}"
     )
 

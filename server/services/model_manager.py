@@ -338,10 +338,10 @@ class ModelManager:
         # Use a generous token budget — thinking models burn tokens on
         # chain-of-thought before emitting the end tag.
         hi_response = self.sync_nonstream_generate(
-            [{"role": "user", "content": "Hi! Just say hello briefly."}],
+            [{"role": "user", "content": "Hi"}],
             is_vlm=self.is_vlm,
-            max_tokens=1024,
-            timeout=60,
+            max_tokens=2048,
+            timeout=120,
         )
         if not hi_response:
             self._persist_thinking_result(model_name, has_thinking=False, end_tag=None)
