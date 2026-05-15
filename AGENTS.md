@@ -59,6 +59,7 @@
 | `server/models.py` | Pydantic request/response models (Message, ChatCreate, ConfigUpdate, etc.). |
 | `server/services/llm.py` | Cache helpers: `is_model_cached()`, `set_offline_mode()`. |
 | `server/services/worker.py` | **Child process** — standalone script that loads MLX models and runs generation. Communicates with parent via JSON-line stdin/stdout protocol. |
+| `server/services/title_worker.py` | **Title worker** — one-shot child process that loads a small 1B model (Llama-3.2-1B-Instruct-4bit) solely for title generation. Reads JSON prompt from stdin, writes title to stdout, exits. Never blocks the main model. |
 | `server/services/model_manager.py` | **ModelManager** — parent-side process manager. Spawns/manages worker, proxies generation commands, health checks, crash recovery. |
 | `server/services/rag.py` | Embedder loading, PDF-to-image, document chunking, semantic retrieval, vision PDF pagination. |
 | `server/services/image_gen.py` | Shared FLUX pipeline for `/imagine` and `/edit` (deduplicated). |
@@ -149,10 +150,18 @@
 - Only one model is loaded in GPU memory at a time. Switching unloads the previous model.
 - The `state.IS_VLM` flag controls which generation path is used.
 
+### Thinking Model Detection (first load)
+- On first model switch, `sync_detect_thinking` sends a "hi" prompt and scans the response for 10 known thinking end-tag patterns via regex.
+- Symmetric tags (same start/end, e.g. `<channel|>`): uses `rfind` to locate the **last** occurrence (the actual end). Closing tags (e.g. `</think>`): uses `find` for the first/only occurrence.
+- Result persisted to `models.has_thinking` (NULL→0/1) and `models.thinking_end_tag`. Only updates when `has_thinking IS NULL` — never re-checks.
+- Default fallback model (`gemma-4-e2b-it-4bit`) is skipped. VLM/LM type is also persisted during initialization.
+- Frontend model select exposes `data-has-thinking` and `data-thinking-end-tag` on each option for the typing indicator.
+
 ### Streaming Responses
 - All generation endpoints use **Server-Sent Events (SSE)**.
 - The SSE protocol uses `data: {json}\n\n` lines with a final `data: [DONE]\n\n`.
 - The frontend parses SSE chunks and renders markdown incrementally with throttled re-renders (~20fps).
+- **Thinking models**: Worker buffers tokens until the end tag is found, then emits `thinking_start` → `thinking` raw tokens → `thinking_done` before regular `content` tokens. Frontend renders a collapsible "Thought" section with brain icon and pulse animation. Thinking content is stored separately from the clean response in the `messages` table.
 
 ### Special Commands (Prefix-Based Routing)
 - `/web <query>` — Scrapes DuckDuckGo and injects results as context before the LLM prompt.
@@ -179,12 +188,13 @@ The chat endpoint uses a two-layer memory system instead of sending the entire c
 
 ### Dynamic Title Refinement
 The chat title evolves as the conversation progresses to maintain relevance:
+- **Separate title model**: Uses `mlx-community/Llama-3.2-1B-Instruct-4bit` (1B params, 4-bit) in its own one-shot process (`title_worker.py`). Title generation never blocks the main model or requires the generation lock.
 - **Tiered Context Strategy**:
   - **Turn 1**: Uses the first message (cleaned of commands).
   - **Turns 3-9**: Uses the last 3 message pairs (User + Assistant) to refine context.
   - **Turn 10+**: Uses the **Progressive Summary** as the definitive source for the title.
 - **Triggering**: The frontend triggers a refinement on the first turn and every 3 turns thereafter.
-- **Fallback Logic**: If the model is not loaded during the first turn, a temporary "fallback" title is generated from raw text, which is later "upgraded" once the model is active.
+- **Protocol**: stdin JSON `{"prompt": "..."}` → stdout JSON `{"title": "..."}`. 3–6 word output.
 
 ### Image Generation
 - Uses `mflux` library (FLUX.1 Schnell, 4-bit quantized).
@@ -230,12 +240,17 @@ chats (id TEXT PK, title TEXT, created_at TIMESTAMP, updated_at TIMESTAMP, syste
 
 -- Messages within chats
 messages (id INTEGER PK, chat_id TEXT FK, role TEXT, content TEXT, timestamp TIMESTAMP,
-         embedding BLOB, generation_time_ms INTEGER, token_count INTEGER)
+         embedding BLOB, generation_time_ms INTEGER, token_count INTEGER,
+         thinking_content TEXT)
          -- Vector memory + generation stats for assistant messages
+         -- thinking_content: raw thinking block with tags (null for non-thinking models)
 
 -- Available models in the library
 models (id INTEGER PK, name TEXT UNIQUE, active BOOLEAN, supports_vision BOOLEAN,
-        supports_image_generation BOOLEAN, is_downloaded BOOLEAN, last_used TIMESTAMP)
+        supports_image_generation BOOLEAN, is_downloaded BOOLEAN, last_used TIMESTAMP,
+        has_thinking INTEGER DEFAULT NULL, thinking_end_tag TEXT)
+        -- has_thinking: NULL=unchecked, 0=non-thinking, 1=thinking
+        -- thinking_end_tag: closing tag that separates thinking from response (e.g. </think>)
 
 -- Document chunks for RAG
 documents (id INTEGER PK, chat_id TEXT FK, file_name TEXT, content TEXT,
@@ -283,6 +298,9 @@ The frontend reads SSE streams token-by-token. Key data fields:
 - `{error: "message"}` — Displays an error.
 - `{model_crash: true, fallback_model: "...", fallback_model_display: "...", detail: "..."}` — Worker OOM crash: frontend shows persistent toast with filtered crash diagnostics, removes typing indicator.
 - `{gen_stats: {tokens, time_ms, time_s, tps}}` — Generation stats emitted before `[DONE]`. Rendered in `.message-actions` as `N tokens · X.Xs · Y.Y t/s`.
+- `{thinking_start: true}` — Thinking block begins. Frontend creates a collapsible `.message-thinking` section with brain icon.
+- `{thinking: "text"}` — Raw thinking tokens (with tags). Displayed in the thinking body with tags stripped.
+- `{thinking_done: true}` — Thinking block complete. Section auto-collapses, content rendered as markdown, response area revealed.
 
 ---
 

@@ -78,6 +78,64 @@ def _done(request_id: str, **kwargs):
     _respond(payload)
 
 
+def _stream_thinking_aware(request_id, token_iter, end_tag):
+    """Buffer tokens until the thinking end tag is found, then emit typed events.
+
+    - Closing tags (start with </ or ◁/): find the first occurrence.
+      Only the actual end tag appears in the output (e.g. </think>).
+    - Symmetric tags (same token opens and closes): find the LAST occurrence.
+      The first is the start tag, the second is the end (e.g. <channel|>).
+    """
+    if not end_tag:
+        for response in token_iter:
+            _respond({"request_id": request_id, "type": "token", "content": response.text})
+        return
+
+    # Determine search strategy
+    if end_tag.startswith('</') or end_tag.startswith('◁/'):
+        # Closing XML-style tag — only appears once as the end marker
+        def _find_end(text):
+            return text.find(end_tag)
+    else:
+        # Symmetric tag — first = start, last = end
+        def _find_end(text):
+            return text.rfind(end_tag)
+
+    buf = ""
+    thinking_done = False
+    last = None
+
+    for response in token_iter:
+        token_text = response.text
+        last = response
+
+        if thinking_done:
+            _respond({"request_id": request_id, "type": "token", "content": token_text})
+            continue
+
+        buf += token_text
+        idx = _find_end(buf)
+
+        if idx != -1:
+            thinking_content = buf[:idx + len(end_tag)]
+            after = buf[idx + len(end_tag):]
+
+            _respond({"request_id": request_id, "type": "thinking_start"})
+            _respond({"request_id": request_id, "type": "thinking", "content": thinking_content})
+            _respond({"request_id": request_id, "type": "thinking_done"})
+
+            thinking_done = True
+            if after:
+                _respond({"request_id": request_id, "type": "token", "content": after})
+            buf = ""
+
+    # Flush: if tag never found, emit everything as regular tokens
+    if buf and not thinking_done:
+        _respond({"request_id": request_id, "type": "token", "content": buf})
+
+    return last
+
+
 # ---------------------------------------------------------------------------
 # Model load / unload
 # ---------------------------------------------------------------------------
@@ -252,8 +310,13 @@ def _unload_model():
 
 def _generate_inner(request_id: str, messages: list, is_vlm: bool, stream: bool,
                     max_tokens: int, temperature: float, top_p: float,
-                    repetition_penalty: float, images: list):
-    """Core generation — applies template, calls mlx, writes token/result responses."""
+                    repetition_penalty: float, images: list,
+                    thinking_end_tag: str = None):
+    """Core generation — applies template, calls mlx, writes token/result responses.
+
+    When thinking_end_tag is set, the streaming path buffers output until the
+    end tag is found, then emits thinking events before regular tokens.
+    """
     if _model is None or _tokenizer is None:
         _error(request_id, "No model loaded")
         _done(request_id)
@@ -268,21 +331,14 @@ def _generate_inner(request_id: str, messages: list, is_vlm: bool, stream: bool,
             prompt = apply_vlm_template(_processor, _vlm_config, messages, num_images=num_images)
 
             if stream:
-                last = None
-                for response in mlx_vlm.stream_generate(
+                token_iter = mlx_vlm.stream_generate(
                     _model, _processor,
                     prompt=prompt,
                     image=images if images else None,
                     max_tokens=max_tokens,
                     temperature=temperature,
-                ):
-                    _respond({
-                        "request_id": request_id,
-                        "type": "token",
-                        "content": response.text,
-                    })
-                    last = response
-                # Forward MLX-computed stats via _done
+                )
+                last = _stream_thinking_aware(request_id, token_iter, thinking_end_tag)
                 gen_tokens = getattr(last, "generation_tokens", 0) if last else 0
                 gen_tps = getattr(last, "generation_tps", 0.0) if last else 0.0
                 _done(request_id,
@@ -312,21 +368,14 @@ def _generate_inner(request_id: str, messages: list, is_vlm: bool, stream: bool,
                 logits_processors.append(make_repetition_penalty(penalty=repetition_penalty))
 
             if stream:
-                last = None
-                for response in mlx_lm.stream_generate(
+                token_iter = mlx_lm.stream_generate(
                     _model, _tokenizer,
                     prompt=prompt,
                     max_tokens=max_tokens,
                     sampler=sampler,
                     logits_processors=logits_processors,
-                ):
-                    _respond({
-                        "request_id": request_id,
-                        "type": "token",
-                        "content": response.text,
-                    })
-                    last = response
-                # Forward MLX-computed stats via _done
+                )
+                last = _stream_thinking_aware(request_id, token_iter, thinking_end_tag)
                 gen_tokens = getattr(last, "generation_tokens", 0) if last else 0
                 gen_tps = getattr(last, "generation_tps", 0.0) if last else 0.0
                 _done(request_id,
@@ -385,6 +434,7 @@ def _handle_command(cmd: dict):
             top_p=cmd.get("top_p", 0.9),
             repetition_penalty=cmd.get("repetition_penalty", 1.1),
             images=cmd.get("images"),
+            thinking_end_tag=cmd.get("thinking_end_tag"),
         )
 
     elif command == "unload":

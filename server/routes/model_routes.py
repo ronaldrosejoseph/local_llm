@@ -28,7 +28,7 @@ router = APIRouter()
 def get_models():
     with closing(get_db_connection()) as conn:
         models = conn.execute(
-            "SELECT id, name, active, supports_vision FROM models"
+            "SELECT id, name, active, supports_vision, has_thinking, thinking_end_tag FROM models"
         ).fetchall()
     result = []
     for m in models:
@@ -44,6 +44,8 @@ def get_models():
             "name": m["name"],
             "active": bool(m["active"]),
             "type": mtype,
+            "has_thinking": m["has_thinking"],
+            "thinking_end_tag": m["thinking_end_tag"],
         })
     return result
 

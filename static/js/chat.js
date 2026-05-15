@@ -3,7 +3,7 @@
  */
 
 import { state, elements, API_URL } from './state.js';
-import { renderMarkdown, scrollToBottom, highlightCode } from './utils.js';
+import { renderMarkdown, scrollToBottom, highlightCode, extractThinking } from './utils.js';
 import { loadChatHistory } from './sidebar.js';
 import { speakResponse, stopSpeaking } from './speech.js';
 import { showToast } from './toast.js';
@@ -29,7 +29,10 @@ export async function sendMessage(text = null) {
         return;
     }
 
-    const typingIndicator = appendTypingIndicator();
+    // Check if current model is a thinking model
+    const activeOpt = elements.modelSelect.options[elements.modelSelect.selectedIndex];
+    const isThinkingModel = activeOpt && activeOpt.dataset.hasThinking === '1';
+    const typingIndicator = appendTypingIndicator(isThinkingModel);
     state._userScrolledUp = false;
     scrollToBottom();
 
@@ -167,6 +170,72 @@ export async function sendMessage(text = null) {
                             continue;
                         }
 
+                        if (data.thinking_start) {
+                            // Remove typing indicator, create thinking section
+                            if (typingIndicator && document.contains(typingIndicator)) typingIndicator.remove();
+                            if (!contentDiv || !document.contains(contentDiv)) {
+                                assistantMessageDiv = document.createElement('div');
+                                assistantMessageDiv.className = 'message assistant';
+                                const thinkingDiv = document.createElement('div');
+                                thinkingDiv.className = 'message-thinking thinking-active';
+                                thinkingDiv.id = `thinking-${requestChatId || 'new'}`;
+                                thinkingDiv.innerHTML = `
+                                    <div class="thinking-header" onclick="this.parentElement.classList.toggle('collapsed')">
+                                        <i data-lucide="brain"></i>
+                                        <span>Thinking...</span>
+                                        <i data-lucide="chevron-down" class="thinking-chevron"></i>
+                                    </div>
+                                    <div class="thinking-body"></div>`;
+                                assistantMessageDiv.appendChild(thinkingDiv);
+                                contentDiv = document.createElement('div');
+                                contentDiv.className = 'message-content';
+                                contentDiv.style.display = 'none';
+                                assistantMessageDiv.appendChild(contentDiv);
+                                actionsDiv = document.createElement('div');
+                                actionsDiv.className = 'message-actions';
+                                actionsDiv.style.cssText = 'margin-top: 5px; opacity: 0.5; display: flex; gap: 10px; align-items: center;';
+                                actionsDiv.innerHTML = `
+                                    <button onclick="speakResponse(this.parentElement.previousElementSibling.textContent)" title="Read out loud" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="volume-2" style="width: 14px; height: 14px;"></i></button>
+                                    <button onclick="stopSpeaking()" title="Stop speaking" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="square" style="width: 14px; height: 14px;"></i></button>
+                                    <button onclick="copyToClipboard(this.parentElement.previousElementSibling.textContent, this)" title="Copy to clipboard" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="copy" style="width: 14px; height: 14px;"></i></button>`;
+                                assistantMessageDiv.appendChild(actionsDiv);
+                                elements.messagesContainer.appendChild(assistantMessageDiv);
+                                lucide.createIcons({ elements: Array.from(assistantMessageDiv.querySelectorAll('[data-lucide]')) });
+                            }
+                            continue;
+                        }
+
+                        if (data.thinking) {
+                            const thinkingDiv = assistantMessageDiv && assistantMessageDiv.querySelector('.message-thinking');
+                            if (thinkingDiv) {
+                                const body = thinkingDiv.querySelector('.thinking-body');
+                                if (body) body.textContent += data.thinking;
+                                // Strip tags for display — collapse closed XML tags
+                                const cleanDisplay = body.textContent
+                                    .replace(/<[^>]*>/g, '')
+                                    .trim();
+                                body.textContent = cleanDisplay;
+                            }
+                            continue;
+                        }
+
+                        if (data.thinking_done) {
+                            const thinkingDiv = assistantMessageDiv && assistantMessageDiv.querySelector('.message-thinking');
+                            if (thinkingDiv) {
+                                thinkingDiv.classList.remove('thinking-active');
+                                thinkingDiv.classList.add('collapsed');
+                                const span = thinkingDiv.querySelector('.thinking-header span');
+                                if (span) span.textContent = 'Thought';
+                                const body = thinkingDiv.querySelector('.thinking-body');
+                                if (body && body.textContent.trim()) {
+                                    body.innerHTML = renderMarkdown(body.textContent);
+                                }
+                                lucide.createIcons({ elements: Array.from(thinkingDiv.querySelectorAll('[data-lucide]')) });
+                            }
+                            if (contentDiv) contentDiv.style.display = '';
+                            continue;
+                        }
+
                         if (data.chat_id && !requestChatId) {
                             requestChatId = data.chat_id;
                             if (!state.currentChatId) state.currentChatId = data.chat_id;
@@ -176,7 +245,9 @@ export async function sendMessage(text = null) {
                             fullContent = "";
                             tokenCount = 0;
                             genStartTime = 0;
-                            if (contentDiv) contentDiv.innerHTML = "";
+                            if (contentDiv) { contentDiv.innerHTML = ""; contentDiv.style.display = ''; }
+                            const thinkingDiv = assistantMessageDiv && assistantMessageDiv.querySelector('.message-thinking');
+                            if (thinkingDiv) { thinkingDiv.style.display = 'none'; thinkingDiv.innerHTML = ''; thinkingDiv.classList.remove('thinking-active'); }
                             continue;
                         }
                         if (data.replace || data.content) {
@@ -342,7 +413,25 @@ export async function stopGeneration() {
 export function appendMessage(role, content, stats = null) {
     const div = document.createElement('div');
     div.className = `message ${role}`;
-    const formattedContent = renderMarkdown(content);
+
+    // For assistant messages with stored thinking, show collapsible section
+    let thinkingHtml = '';
+    let displayContent = content;
+    if (role === 'assistant' && stats && stats.thinking_content) {
+        const { thinking, content: cleanContent } = extractThinking(stats.thinking_content);
+        if (thinking) {
+            thinkingHtml = `
+                <div class="message-thinking collapsed">
+                    <div class="thinking-header" onclick="this.parentElement.classList.toggle('collapsed')">
+                        <i data-lucide="brain"></i>
+                        <span>Thought</span>
+                        <i data-lucide="chevron-down" class="thinking-chevron"></i>
+                    </div>
+                    <div class="thinking-body">${renderMarkdown(thinking)}</div>
+                </div>`;
+            displayContent = cleanContent || content;
+        }
+    }
 
     let statsHtml = '';
     if (stats && stats.token_count > 0) {
@@ -355,7 +444,8 @@ export function appendMessage(role, content, stats = null) {
     }
 
     div.innerHTML = `
-        <div class="message-content">${formattedContent}</div>
+        ${thinkingHtml}
+        <div class="message-content">${renderMarkdown(displayContent)}</div>
         <div class="message-actions" style="margin-top: 5px; opacity: 0.5; display: flex; gap: 10px; align-items: center;">
             ${role === 'assistant' ? `
                 <button onclick="speakResponse(this.parentElement.previousElementSibling.textContent)" title="Read out loud" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="volume-2" style="width: 14px; height: 14px;"></i></button>
@@ -371,17 +461,28 @@ export function appendMessage(role, content, stats = null) {
     lucide.createIcons({ elements: Array.from(div.querySelectorAll('[data-lucide]')) });
 }
 
-export function appendTypingIndicator() {
+export function appendTypingIndicator(isThinking = false) {
     const div = document.createElement('div');
     div.className = 'message assistant';
-    div.innerHTML = `
-        <div class="typing">
-            <div class="typing-dot"></div>
-            <div class="typing-dot"></div>
-            <div class="typing-dot"></div>
-        </div>
-    `;
+    if (isThinking) {
+        div.innerHTML = `
+            <div class="typing thinking-indicator">
+                <i data-lucide="brain" style="width:16px;height:16px;color:#a78bfa;"></i>
+                <span>Thinking</span>
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+            </div>`;
+    } else {
+        div.innerHTML = `
+            <div class="typing">
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+            </div>`;
+    }
     elements.messagesContainer.appendChild(div);
+    lucide.createIcons({ elements: Array.from(div.querySelectorAll('[data-lucide]')) });
     return div;
 }
 

@@ -60,17 +60,22 @@ This application transforms your machine into a fully private AI workstation:
 > **Important FLUX.1 Authentication Step**: 
 > The advanced image generation engine requires access to the `FLUX.1-schnell` repository owned by Black Forest Labs. Because this repository is **gated**, your server will crash with a `401 Unauthorized` HTTP error unless you authenticate.
 > 1. Log into your Hugging Face account, navigate to [FLUX.1-schnell](https://huggingface.co/black-forest-labs/FLUX.1-schnell), and **explicitly click the "Agree to access repository" button** on their model card. (Generating a token is not enough; your account must independently accept their terms).
-> 2. Add your token in the app: open **Settings → 🔑 HuggingFace Token**, paste your token (`hf_...`), and click **Save**. The token is verified and stored securely in your **macOS Keychain** (never in plaintext). Using `/imagine` or `/edit` without a token shows a reminder.
-> 3. Alternatively, authenticate via terminal:
-> ```bash
-> ./venv/bin/python3 -c "from huggingface_hub import login; login(token='YOUR_HF_TOKEN')"
-> ```
+> 2. Create a Hugging Face Token:
+>     - Go to your Hugging Face Access Tokens Settings.
+>     - Click the **New token** button.
+>     - Configure the token details:
+>       - **Token name**: Give it a memorable name (e.g., Local-LLM-App).
+>       - **Token type**: Set this to **Read** (a Read token is all that is required to download gated models).
+>     - Click **Generate**.
+>     - Click the **Copy** icon next to your newly created token (it will start with `hf_...`).
+> 3. Add your token in the app: open **Settings → 🔑 HuggingFace Token**, paste your token (`hf_...`), and click **Save**. The token is verified and stored securely in your **macOS Keychain** (never in plaintext). Using `/imagine` or `/edit` without a token shows a reminder.
+
 - **Vision Models (`mlx_vlm`)**: 
   - Hook into multimodal functionality natively! Pass photos seamlessly into Vision LLMs locally (e.g., `Gemma-4`).
 
 ### 🎙️ Audio Interaction
 - **Speech-to-Text**: Click the mic icon to dictate physical voice sequences to the LLM.
-- **Text-to-Speech**: AI responses can be spoken aloud intelligently using the integrated macOS `say` command daemon.
+- **Text-to-Speech**: AI responses can be spoken aloud intelligently using the integrated macOS `say` command daemon. To download premium voices on macOS, open System Settings search for System Voice and click on it. Goto the System Voice dropdown menu to select Manage Voices..., click the download cloud icon next to your preferred "Premium" voice eg: Siri (Voice 4), and then re-select it from the main dropdown menu to set it as your default.
 
 ### 📐 Professional Math Rendering
 - **KaTeX Support**: Integrated professional LaTeX mathematical typesetting. The system automatically detects and renders complex inline and block-level math formulas (e.g., `$E=mc^2$`) with high-fidelity, offline-first KaTeX libraries.

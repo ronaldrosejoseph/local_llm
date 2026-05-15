@@ -53,7 +53,7 @@ def get_chats(q: Optional[str] = None):
 def get_messages(chat_id: str):
     with closing(get_db_connection()) as conn:
         messages = conn.execute(
-            "SELECT role, content, generation_time_ms, token_count "
+            "SELECT role, content, generation_time_ms, token_count, thinking_content "
             "FROM messages WHERE chat_id = ? ORDER BY timestamp",
             (chat_id,),
         ).fetchall()
@@ -63,6 +63,7 @@ def get_messages(chat_id: str):
             "content": m["content"],
             "generation_time_ms": m["generation_time_ms"] or 0,
             "token_count": m["token_count"] or 0,
+            "thinking_content": m["thinking_content"] or "",
         }
         for m in messages
     ]
@@ -80,98 +81,133 @@ async def internal_generate_title(chat_id: str):
     Can be called by API routes or background memory tasks.
     """
     import re
-    # 1. Fetch current chat info
+    # 1. Fetch current chat info and build source text for the title prompt
     with closing(get_db_connection()) as conn:
-        # Priority: 1. Existing Summary, 2. Recent context (last 3 turns), 3. First message
         chat = conn.execute("SELECT title, title_is_fallback, summary FROM chats WHERE id = ?", (chat_id,)).fetchone()
         if not chat:
             return {"error": "Chat not found"}
-            
+
+        # Collect all user prompts for a lightweight full-context option
+        all_user_msgs = conn.execute(
+            "SELECT content FROM messages WHERE chat_id = ? AND role = 'user' ORDER BY timestamp ASC",
+            (chat_id,)
+        ).fetchall()
+        all_user_text = " | ".join([m["content"] for m in all_user_msgs])
+        all_user_words = len(all_user_text.split())
+
         source_text = ""
-        if chat["summary"]:
+        if all_user_words <= 40:
+            # Short conversation — use every user prompt for full context
+            source_text = all_user_text
+            print(f"Title Gen: Using all user prompts ({all_user_words} words) for {chat_id}")
+        elif chat["summary"]:
             source_text = chat["summary"]
             print(f"Title Gen: Using Summary as source for {chat_id}")
         else:
-            # Get last 3 turns of context for a more relevant "Recent" title
+            # Get last 3 turns for a more relevant recent title
             recent_msgs = conn.execute(
                 "SELECT role, content FROM messages WHERE chat_id = ? ORDER BY timestamp DESC LIMIT 6",
                 (chat_id,)
             ).fetchall()
-            
+
             if len(recent_msgs) > 2:
-                # Join recent turns (reversed because we fetched DESC)
                 source_text = "\n".join([f"{m['role'].capitalize()}: {m['content']}" for m in reversed(recent_msgs)])
                 print(f"Title Gen: Using Recent Context (last {len(recent_msgs)//2} turns) for {chat_id}")
             else:
-                # Fallback to the very first user message
-                first_msg_row = conn.execute(
-                    "SELECT content FROM messages WHERE chat_id = ? AND role = 'user' ORDER BY timestamp ASC LIMIT 1",
-                    (chat_id,)
-                ).fetchone()
-                source_text = first_msg_row["content"] if first_msg_row else ""
-                print(f"Title Gen: Using First Message as source for {chat_id}")
-        
+                source_text = all_user_text
+                print(f"Title Gen: Using first user message for {chat_id}")
+
         first_message = source_text
 
-    # 2. Clean up the prompt (strip commands and attachments)
+    # 2. Clean up the prompt (strip commands, attachments, and thinking tags)
     clean_text = first_message.strip()
     clean_text = re.sub(r'^/(imagine|edit|web|next)\s*', '', clean_text).strip()
     clean_text = re.sub(r'^\[Attached (Document|Image|Scanned Document): (.*?)\]', r'\2', clean_text).strip()
+    clean_text = re.sub(
+        r'</?think>|</?thinking>|</?reasoning>|</?thought>|</?answer>|</?response>|'
+        r'<channel\|>|<unused95>|<\|end\|>|◁/think▷',
+        '', clean_text, flags=re.IGNORECASE,
+    )
     clean_text = clean_text.strip("[]\"' ")
 
-    # 3. Handle model missing (Fallback path)
-    if state.model_manager is None or state.model_manager.model_name is None:
-        if chat["title"] == "New Conversation" or chat["title_is_fallback"]:
-            words = clean_text.split()
-            fallback_title = " ".join(words[:5])
-            if len(words) > 5: fallback_title += "..."
-            
+    # 3. On first title generation, short prompts don't need an LLM.
+    #    For title updates use the LLM — the conversation may have evolved.
+    if chat["title_is_fallback"]:
+        word_count = len(clean_text.split())
+        if word_count <= 5:
+            title = clean_text[:80]
             with closing(get_db_connection()) as conn:
-                conn.execute("UPDATE chats SET title = ?, title_is_fallback = 1 WHERE id = ?", (fallback_title, chat_id))
+                conn.execute(
+                    "UPDATE chats SET title = ?, title_is_fallback = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (title, chat_id),
+                )
                 conn.commit()
-            return {"title": fallback_title, "status": "fallback"}
-        return {"title": chat["title"], "status": "still_fallback"}
+            return {"title": title, "status": "short_prompt"}
 
-    # 4. Model is loaded - Proceed with LLM-based generation
-    if not state.generation_lock.acquire(blocking=True, timeout=5.0):
-        return {"error": "Model busy"}
-        
+    # 4. Generate title using a separate lightweight model process.
+    #    Never blocks the main model — runs in its own MLX process.
+    prompt_txt = (
+        "You are a title generator. Your ONLY job is to read the text below "
+        "and produce a short 3–6 word label that describes the TOPIC or SUBJECT.\n\n"
+        "CRITICAL RULES:\n"
+        "- Output a TOPIC LABEL, NOT an answer, opinion, moral, or response.\n"
+        "- Do NOT engage with the content. Do NOT be helpful. Just label it.\n"
+        "- Do NOT use: asterisks, markdown, quotes, emojis, brackets, colons, "
+        "punctuation, or any formatting.\n"
+        "- Only output the 3–6 word title. Nothing else. No explanations.\n\n"
+        "Examples of correct behavior:\n"
+        'Text: "tell me a joke very good one" → Title: Tell Me a Joke\n'
+        'Text: "what is the capital of France" → Title: Capital of France\n'
+        'Text: "write a python script to sort a list" → Title: Python List Sorting\n'
+        'Text: "how do I fix a leaking faucet" → Title: Fixing Leaking Faucet\n\n'
+        "BAD examples (DO NOT do this):\n"
+        'Text: "tell me a joke very good one" → Title: Laughing is the Best Medicine ← WRONG! This answers, not labels.\n'
+        'Text: "what is AI" → Title: AI is Transforming Our World ← WRONG! This gives an opinion, not a topic.\n\n'
+        "Now label this text with a 3–6 word topic:\n\n"
+        f"{clean_text}"
+    )
+
     try:
-        prompt_txt = (
-            "Summarize the text strictly into a title of exactly 2–5 words.\n"
-            "Output plain text only.\n"
-            "Do NOT use:\n"
-            "- asterisks\n"
-            "- markdown\n"
-            "- quotes\n"
-            "- emojis\n"
-            "- brackets\n"
-            "- colons\n"
-            "- punctuation of any kind\n"
-            "- prefixes like 'Title' or 'Summary'\n"
-            "Return ONLY the 2–5 word title with no extra text.\n\n"
-            f"{clean_text}"
+        worker_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "services", "title_worker.py",
         )
-        messages = [{"role": "user", "content": prompt_txt}]
-
-        result = await state.model_manager.nonstream_generate(
-            messages=messages,
-            is_vlm=state.model_manager.is_vlm,
-            max_tokens=12,
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, worker_path,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate(
+            json.dumps({"prompt": prompt_txt}).encode()
         )
 
-        title = result.strip().strip('"').strip("'") if result else ""
-        
+        if proc.returncode != 0:
+            stderr_text = stderr.decode() if stderr else ""
+            print(f"Title worker failed (exit {proc.returncode}): {stderr_text[:500]}", file=sys.stderr)
+            return {"error": "Title generation failed"}
+
+        result = json.loads(stdout.decode())
+        if "error" in result:
+            print(f"Title worker error: {result['error']}", file=sys.stderr)
+            return {"error": result["error"]}
+
+        title = result.get("title", "").strip().strip('"').strip("'")
+        if not title:
+            return {"error": "Empty title"}
+
         with closing(get_db_connection()) as conn:
-            conn.execute("UPDATE chats SET title = ?, title_is_fallback = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (title, chat_id))
+            conn.execute(
+                "UPDATE chats SET title = ?, title_is_fallback = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (title, chat_id),
+            )
             conn.commit()
-            
+
         return {"title": title}
+
     except Exception as e:
-        print(f"Failed to generate title: {e}")
+        print(f"Failed to generate title: {e}", file=sys.stderr)
         return {"error": str(e)}
-    finally:
-        state.generation_lock.release()
 
 @router.get("/api/chats/{chat_id}/rag-status")
 def get_rag_status(chat_id: str):
@@ -460,9 +496,22 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
             yield f"data: {json.dumps({'rag_status': rag_meta})}\n\n"
 
         full_response = ""
+        thinking_content = ""  # raw thinking block including tags
         import time
         token_count = 0
-        gen_start = None  # set on first token (excludes prefill/thinking time)
+        gen_start = None  # set on first regular token (excludes thinking time)
+
+        # Check if current model is a known thinking model
+        thinking_end_tag = None
+        if state.MODEL_NAME:
+            with closing(get_db_connection()) as conn:
+                row = conn.execute(
+                    "SELECT has_thinking, thinking_end_tag FROM models WHERE name = ?",
+                    (state.MODEL_NAME,),
+                ).fetchone()
+            if row and row["has_thinking"] == 1:
+                thinking_end_tag = row["thinking_end_tag"]
+
         try:
             cfg = load_config()
 
@@ -478,7 +527,7 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                             offset = 0
                         image_paths = all_images[offset: offset + limit]
 
-            async for token in state.model_manager.stream_generate(
+            async for ev_type, ev_text in state.model_manager.stream_generate(
                 messages=messages,
                 is_vlm=state.model_manager.is_vlm,
                 image_paths=image_paths,
@@ -486,12 +535,25 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                 temperature=cfg["temperature"],
                 top_p=cfg["top_p"],
                 repetition_penalty=cfg["repetition_penalty"],
+                thinking_end_tag=thinking_end_tag,
             ):
+                if ev_type == "thinking_start":
+                    yield f"data: {json.dumps({'thinking_start': True})}\n\n"
+                    continue
+                elif ev_type == "thinking":
+                    thinking_content += ev_text
+                    yield f"data: {json.dumps({'thinking': ev_text})}\n\n"
+                    continue
+                elif ev_type == "thinking_done":
+                    yield f"data: {json.dumps({'thinking_done': True})}\n\n"
+                    continue
+
+                # Regular token
                 if gen_start is None:
                     gen_start = time.monotonic()
                 token_count += 1
-                full_response += token
-                yield f"data: {json.dumps({'content': token})}\n\n"
+                full_response += ev_text
+                yield f"data: {json.dumps({'content': ev_text})}\n\n"
                 await asyncio.sleep(0)
 
         except InferenceCrash as e:
@@ -502,7 +564,14 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
             yield f"data: {json.dumps({'error': 'Model process crashed. Falling back to a smaller model. Please try again.'})}\n\n"
 
         except asyncio.CancelledError:
-            print(f"Chat generation for {chat_id} was cancelled by client.")
+            print(f"Chat generation for {chat_id} was cancelled by client.", file=sys.stderr)
+            # Worker is still stuck in the MLX generation loop — kill it
+            # and restart with the same model so the next request works.
+            if state.model_manager:
+                try:
+                    await state.model_manager.cancel_generation()
+                except Exception as cancel_err:
+                    print(f"Failed to restart worker after cancel: {cancel_err}", file=sys.stderr)
         except Exception as e:
             print(f"Error during generation: {e}")
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
@@ -523,13 +592,13 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                 elapsed_s = gen_time_ms / 1000
                 tps = token_count / elapsed_s if elapsed_s > 0 else 0
 
-            # Save assistant message with generation stats
+            # Save assistant message with generation stats + thinking content
             assistant_msg_id = None
             if full_response:
                 with closing(get_db_connection()) as conn:
                     cursor = conn.execute(
-                        "INSERT INTO messages (chat_id, role, content, generation_time_ms, token_count) VALUES (?, ?, ?, ?, ?)",
-                        (chat_id, "assistant", full_response, gen_time_ms, token_count),
+                        "INSERT INTO messages (chat_id, role, content, generation_time_ms, token_count, thinking_content) VALUES (?, ?, ?, ?, ?, ?)",
+                        (chat_id, "assistant", full_response, gen_time_ms, token_count, thinking_content or None),
                     )
                     assistant_msg_id = cursor.lastrowid
                     conn.commit()

@@ -14,6 +14,16 @@ export const stripControlTokens = (text) => {
         .trim();
 };
 
+// Strip known thinking/reasoning tags from stored thinking content
+const THINKING_TAG_RE = /<\/?\s*(?:think|THINK|thinking|reasoning|thought|answer|response)\s*\/?>|<channel\|>|<unused95>|<\|end\|>|◁\/think▷/gi;
+
+export function extractThinking(thinkingContent) {
+    if (!thinkingContent) return { thinking: null, content: null };
+    const clean = thinkingContent.replace(THINKING_TAG_RE, '').trim();
+    if (!clean) return { thinking: null, content: null };
+    return { thinking: clean, content: null };
+}
+
 // DOMPurify config: allow `id` on code elements and `onclick` on copy buttons.
 // Also allow MathML tags and specific attributes used by KaTeX.
 const DOMPURIFY_CONFIG = {

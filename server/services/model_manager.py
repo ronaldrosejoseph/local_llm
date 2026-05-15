@@ -203,8 +203,13 @@ class ModelManager:
     async def stream_generate(self, messages: list, is_vlm: bool = False,
                               image_paths: list = None, max_tokens: int = 8192,
                               temperature: float = 0.3, top_p: float = 0.9,
-                              repetition_penalty: float = 1.1):
-        """Stream tokens from the child process. Yields token strings.
+                              repetition_penalty: float = 1.1,
+                              thinking_end_tag: str = None):
+        """Stream tokens from the child process. Yields (type, text) tuples.
+
+        When thinking_end_tag is set and the worker detects the tag in the
+        output, it yields ("thinking_start", ""), ("thinking", text),
+        ("thinking_done", "") before the regular ("token", text) events.
 
         After the generator is exhausted, read self._last_gen_stats for
         MLX-computed tokens_per_second and generation_tokens (if available).
@@ -223,12 +228,14 @@ class ModelManager:
         }
         if image_paths:
             cmd["images"] = image_paths
+        if thinking_end_tag:
+            cmd["thinking_end_tag"] = thinking_end_tag
 
         await self._send_raw(cmd)
         async for resp in self._read_responses(cmd["request_id"]):
             t = resp.get("type")
-            if t == "token":
-                yield resp.get("content", "")
+            if t in ("token", "thinking", "thinking_start", "thinking_done"):
+                yield (t, resp.get("content", ""))
             elif t == "done":
                 # Capture MLX-reported stats from the done response
                 if resp.get("tokens_per_second"):
@@ -589,6 +596,64 @@ class ModelManager:
 
         self._ping_fail_count = 0
         print(f"ModelManager: crash recovery complete, now running {name}", file=sys.stderr)
+
+    async def cancel_generation(self):
+        """Kill the worker and restart with the current model.
+
+        Called when the user stops generation. The worker process is stuck
+        in the MLX generation loop and won't read new commands until it
+        finishes — so we kill it and reload the same model fresh.
+        """
+        current_model = state.MODEL_NAME or self.model_name
+        print(f"ModelManager: cancelling generation, will reload {current_model}", file=sys.stderr)
+
+        # Kill old process
+        if self.process and self.process.poll() is None:
+            try:
+                self.process.kill()
+                await asyncio.sleep(0.5)
+            except Exception:
+                pass
+        self.process = None
+
+        # Cancel reader task
+        if self._reader_task is not None and not self._reader_task.done():
+            self._reader_task.cancel()
+            try:
+                await self._reader_task
+            except asyncio.CancelledError:
+                pass
+            self._reader_task = None
+
+        # Drain pending queues
+        for q in list(self._pending.values()):
+            try:
+                q.put_nowait({"type": "error", "message": "Generation cancelled by user"})
+            except asyncio.QueueFull:
+                pass
+            try:
+                q.put_nowait({"type": "done"})
+            except asyncio.QueueFull:
+                pass
+        self._pending.clear()
+
+        # Kill orphans
+        _kill_orphan_workers()
+
+        # Spawn fresh process
+        self._spawn_process()
+        self._reader_task = asyncio.create_task(self._reader_loop())
+
+        # Reload the same model
+        if current_model:
+            success, name = await self.load_model(current_model)
+            state.MODEL_NAME = name
+            if not success:
+                print(f"ModelManager: cancel restart — failed to reload {current_model}, falling back", file=sys.stderr)
+            else:
+                print(f"ModelManager: cancel restart complete, reloaded {name}", file=sys.stderr)
+
+        self._ping_fail_count = 0
 
     # ------------------------------------------------------------------
     # Health check

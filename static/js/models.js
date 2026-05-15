@@ -19,6 +19,8 @@ export async function loadModels() {
             option.value = m.name;
             option.textContent = m.name.split('/').pop();
             option.selected = m.active;
+            option.dataset.hasThinking = (m.has_thinking === 1) ? '1' : '0';
+            option.dataset.thinkingEndTag = m.thinking_end_tag || '';
             elements.modelSelect.appendChild(option);
 
             if (m.active) {

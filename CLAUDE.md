@@ -37,6 +37,7 @@ server/models.py       → Pydantic request/response models
 server/routes/         → API route handlers (chat, models, documents, config, speech, system_prompts)
 server/services/       → Business logic
     worker.py          → Child process: loads MLX models, handles generation via stdin/stdout JSON protocol
+    title_worker.py    → One-shot child process: loads a small 1B model (Llama-3.2-1B-Instruct-4bit) for title generation only — never blocks the main model
     model_manager.py   → Parent-side manager: spawns/manages worker, proxies commands, crash recovery
     llm.py             → Cache helpers (is_model_cached, set_offline_mode)
     rag.py             → Document embedding, chunking, retrieval
@@ -63,6 +64,20 @@ server/services/       → Business logic
 ### Streaming (SSE)
 - All generation uses Server-Sent Events with `data: {json}\n\n` lines, terminated by `data: [DONE]\n\n`
 - Frontend parses SSE chunks token-by-token, renders markdown incrementally (~20fps throttle)
+- For thinking models, SSE emits `thinking_start` → `thinking` (raw tokens) → `thinking_done` before regular `content` tokens. Frontend renders a collapsible "Thought" section with brain icon and pulse animation.
+
+### Thinking model detection (first load)
+- When a model is loaded for the first time (`has_thinking IS NULL`), `sync_detect_thinking` sends a "hi" prompt and scans the response for known end-tag patterns via regex
+- 10 known end-tag patterns are checked: `</think>`, `<channel|>`, `◁/think▷`, `<|end|>`, `<unused95>`, `</thinking>`, `</reasoning>`, `</thought>`, `</answer>`, `</response>`
+- Symmetric tags (same start/end, e.g. `<channel|>`) use `rfind` to locate the last occurrence (end). Closing tags (e.g. `</think>`) use `find` (first/only occurrence).
+- Result persisted to `models.has_thinking` (0/1) and `models.thinking_end_tag` in the DB. Default fallback model is skipped.
+- Also persists VLM/LM type (`supports_vision`) from the worker's load result during initialization.
+
+### Thinking-aware streaming
+- **Worker** (`_stream_thinking_aware`): buffers tokens until the end tag is found, then emits `thinking_start` / `thinking` / `thinking_done` before regular tokens
+- **ModelManager**: `stream_generate` accepts optional `thinking_end_tag`, yields `(type, text)` tuples
+- **Chat route**: looks up `has_thinking` + `thinking_end_tag` from DB before generation, passes to worker, stores `thinking_content` (raw with tags) separately from `content` (clean response) in the `messages` table
+- **Frontend**: collapsible `.message-thinking` section for real-time + historical messages; typing indicator shows brain icon for thinking models; `extractThinking()` strips tags from stored thinking content for clean display
 
 ### Special commands (prefix-based routing in chat)
 - `/web <query>` — DuckDuckGo search results injected as context
@@ -107,6 +122,11 @@ All server modules import `server.state` and read/write module-level attributes 
 - Models show a type badge in Settings → Model Library: **VLM** (vision), **LM** (text-only), **?** (not yet loaded).
 - Type is determined by the worker's actual load result (`mlx_vlm` vs `mlx_lm`), not config.json heuristics.
 - `ModelManager.load_model()` persists the type to DB (`supports_vision` column). Only fills in NULL values — never overwrites confirmed types.
+- Thinking models also show a 🧠 badge. `has_thinking` (NULL/0/1) and `thinking_end_tag` columns on the `models` table are populated by `sync_detect_thinking` on first load.
+- The `messages` table has a `thinking_content` column for storing the raw thinking block (with tags), separate from the clean `content` response.
+
+### Database migrations
+- `init_db.py` uses `add_column_if_missing()` for safe schema evolution. New columns: `messages.thinking_content`, `models.has_thinking`, `models.thinking_end_tag`.
 
 ### Environment
 - `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1` are set at the top of `server.py` before any HF imports

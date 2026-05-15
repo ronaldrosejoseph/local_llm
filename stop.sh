@@ -74,6 +74,15 @@ if [ -n "$WORKER_PIDS" ]; then
 fi
 rm -f "worker.pid"
 
+# 5. Clean up title worker processes
+TITLE_PIDS=$(pgrep -f "title_worker.py" 2>/dev/null)
+if [ -n "$TITLE_PIDS" ]; then
+    echo "Cleaning up title worker processes: $TITLE_PIDS"
+    for p in $TITLE_PIDS; do
+        kill -9 "$p" 2>/dev/null
+    done
+fi
+
 if [ "$SERVER_RUNNING" = true ]; then
     rm -f ".server_lifecycle"
     echo "✅ Server stopped and environment is clean."

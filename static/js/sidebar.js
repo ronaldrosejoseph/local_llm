@@ -77,6 +77,7 @@ export async function loadChat(chatId, title, isFallback = false) {
             appendMessage(msg.role, msg.content, {
                 generation_time_ms: msg.generation_time_ms || 0,
                 token_count: msg.token_count || 0,
+                thinking_content: msg.thinking_content || '',
             });
         });
 
