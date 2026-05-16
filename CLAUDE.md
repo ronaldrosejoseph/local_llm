@@ -69,6 +69,13 @@ server/services/       → Business logic
 - Frontend parses SSE chunks token-by-token, renders markdown incrementally (~20fps throttle)
 - For thinking models, SSE emits `thinking_start` → `thinking` (raw tokens) → `thinking_done` before regular `content` tokens. Frontend renders a collapsible "Thought" section with brain icon and pulse animation.
 
+### Title generation (hybrid strategy)
+- Titles are generated after the first turn and every 3 turns by the frontend.
+- **Programmatic titles**: First message checked for `[Attached Document]`, `[Attached Image]`, `/imagine`, `/edit` — sets `Doc:`/`Image:`/`Generated:` title directly, skips LLM entirely.
+- **Main model path** (non-thinking only): Uses the already-loaded worker model via `sync_nonstream_generate()` with `generation_lock` (non-blocking). Thinking models skip this to avoid waiting on chain-of-thought.
+- **Title worker fallback**: One-shot subprocess (`title_worker.py`) with Llama-3.2-1B-Instruct-4bit. Used when the main model is a thinking model, is busy, or generation fails.
+- Context is built tiered: full conversation (short chats), summary+latest 4 messages, or last 10 messages with role labels.
+
 ### Thinking model detection (first load)
 - When a model is loaded for the first time (`has_thinking IS NULL`), `sync_detect_thinking` sends a "hi" prompt and scans the response for known end-tag patterns via regex
 - 10 known end-tag patterns are checked: `</think>`, `<channel|>`, `◁/think▷`, `<|end|>`, `<unused95>`, `</thinking>`, `</reasoning>`, `</thought>`, `</answer>`, `</response>`

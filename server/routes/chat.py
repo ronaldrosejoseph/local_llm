@@ -172,6 +172,17 @@ async def internal_generate_title(chat_id: str):
 
         first_message = source_text
 
+        # Check if main model is available and non-thinking — thinking models
+        # would waste tokens on chain-of-thought for a simple title prompt.
+        can_use_main = False
+        if state.model_manager is not None and state.MODEL_NAME:
+            row = conn.execute(
+                "SELECT has_thinking FROM models WHERE name = ?",
+                (state.MODEL_NAME,),
+            ).fetchone()
+            if row is None or row["has_thinking"] != 1:
+                can_use_main = True
+
     # 2. Clean up the prompt (strip commands, attachments, and thinking tags)
     clean_text = first_message.strip()
     clean_text = re.sub(r'^/(imagine|edit|web|next)\s*', '', clean_text).strip()
@@ -197,7 +208,50 @@ async def internal_generate_title(chat_id: str):
                 conn.commit()
             return {"title": title, "status": "short_prompt"}
 
-    # 4. Generate title using a separate lightweight model process.
+    # 4. Try main model first (non-thinking models only, to avoid waiting on
+    #    chain-of-thought). Falls back to title_worker if busy or thinking.
+    if can_use_main:
+        prompt_main = (
+            "Do NOT use: emojis, symbols, asterisks, **, quotes, brackets, colons, punctuation\n"
+            "Verify that the output is strictly a concise label with no extra text, no headings, no text formatting\n"
+            "Here is a conversation. Summarize the main topic in 3-6 words."
+            f"{clean_text}"
+        )
+
+        def _gen_with_main():
+            if not state.generation_lock.acquire(blocking=False):
+                return None
+            try:
+                result = state.model_manager.sync_nonstream_generate(
+                    messages=[{"role": "user", "content": prompt_main}],
+                    is_vlm=state.model_manager.is_vlm,
+                    max_tokens=50,
+                    timeout=15,
+                )
+                if not result:
+                    return None
+                result = re.sub(r'<think>.*?</think>', '', result, flags=re.DOTALL).strip()
+                result = re.sub(r'</?think>|</?thinking>', '', result, flags=re.IGNORECASE).strip()
+                return result.strip('"\'').strip()
+            except Exception as e:
+                print(f"Title Gen (main model): {e}", file=sys.stderr)
+                return None
+            finally:
+                state.generation_lock.release()
+
+        title = await asyncio.to_thread(_gen_with_main)
+        if title:
+            with closing(get_db_connection()) as conn:
+                conn.execute(
+                    "UPDATE chats SET title = ?, title_is_fallback = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (title, chat_id),
+                )
+                conn.commit()
+            print(f"Title Gen: Main model '{title}' for {chat_id}")
+            return {"title": title}
+        # Fall through to title_worker if main model was busy or failed
+
+    # 5. Fall back to title_worker subprocess.
     #    Never blocks the main model — runs in its own MLX process.
     prompt_txt = (
         "You are a title generator. Your ONLY job is to read the text below "

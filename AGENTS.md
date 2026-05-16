@@ -188,14 +188,28 @@ The chat endpoint uses a two-layer memory system instead of sending the entire c
 - Configurable via `config.json`: `rolling_window_max_tokens`, `summary_max_tokens`, `context_window_pct` (1-100% of model's full context — lower = less RAM).
 
 ### Dynamic Title Refinement
-The chat title is auto-refined after the first turn and every 3 turns by the frontend:
-- **Separate title model**: Uses `mlx-community/Llama-3.2-1B-Instruct-4bit` (1B params, 4-bit) in its own one-shot process (`title_worker.py`). Title generation never blocks the main model.
+The chat title is auto-refined after the first turn and every 3 turns by the frontend, using a hybrid generation strategy:
+
+**Title generation flow** (short-circuits at first match):
+
+1. **Programmatic titles** — First user message checked for known patterns, LLM skipped entirely:
+   - `[Attached Document/Scanned Document: name]` → `Doc: name`
+   - `[Attached Image: name]` → `Image: name`
+   - `/imagine prompt` → `Generated: prompt`
+   - `/edit prompt` → `Edited Image`
+
+2. **Short prompt bypass** — If `title_is_fallback` and text ≤ 5 words, use raw text directly.
+
+3. **Main model path** (non-thinking models only) — Uses the already-loaded worker model via `state.model_manager.sync_nonstream_generate()` with the `generation_lock` (non-blocking). Thinking models skip this path to avoid waiting on chain-of-thought. Falls through on lock-busy or failure.
+
+4. **Title worker fallback** — One-shot subprocess (`title_worker.py`) using `mlx-community/Llama-3.2-1B-Instruct-4bit`. Never blocks the main model.
+
 - **Context Strategy** (tiered by conversation state):
   - **No summary + ≥6 user words**: All messages (user + assistant) with `User:`/`Assistant:` labels. Assistant messages truncated at 300 words.
   - **Summary exists**: Summary text + latest 4 messages as a sanity check.
   - **Latest user message < 7 chars**: Uses just that message (handles single-word queries).
   - **Otherwise**: Last 10 messages with role labels.
-- **Protocol**: stdin JSON `{"prompt": "..."}` → stdout JSON `{"title": "..."}`. 3–6 word output.
+- **Protocol**: Main model path uses `sync_nonstream_generate`; title worker uses stdin JSON `{"prompt": "..."}` → stdout JSON `{"title": "..."}`.
 - **Prompt rules**: No think tags, no emojis, no special symbols, plain text only.
 
 ### Image Generation
