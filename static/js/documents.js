@@ -18,14 +18,13 @@ export function initDocumentUpload() {
 
         if (!state.currentChatId) {
             await startNewChat();
-            state.currentChatId = crypto.randomUUID(); // optimistic
+            state.currentChatId = crypto.randomUUID();
         }
 
         const formData = new FormData();
         formData.append('file', file);
         formData.append('chat_id', state.currentChatId);
 
-        // Show loading UI
         elements.attachmentContainer.style.display = 'block';
         elements.attachmentName.textContent = `Uploading ${file.name}...`;
 
@@ -44,19 +43,18 @@ export function initDocumentUpload() {
 
             if (data.status === 'ok') {
                 elements.attachmentName.textContent = `${file.name} (${data.chunks} chunks)`;
-                console.log("Document processed securely.");
 
-                // 1. Immediately append to the chat UI
+                if (data.scanned_no_vision) {
+                    showToast("This PDF appears to be a scanned document (no digital text). "
+                        + "Switch to a Vision model (VLM) to read the content.", "warning", 0);
+                }
+
                 const msg = data.vision ? `[Attached Image: ${file.name}]` : `[Attached Document: ${file.name}]`;
                 appendMessage('user', msg);
-
-                // 2. Hide welcome screen if this was the first action
                 elements.welcomeScreen.style.display = 'none';
 
-                // 3. Refresh chat history in sidebar
                 loadChatHistory();
 
-                // 4. Update RAG Slider immediately
                 if (data.rag_status) {
                     const chatModule = await import('./chat.js');
                     chatModule.updateRagStatusUI(data.rag_status);

@@ -61,6 +61,10 @@ async def startup():
 @app.on_event("shutdown")
 async def shutdown():
     """Stop the model worker and clean up all resources gracefully."""
+    import warnings
+    # Suppress harmless loky semaphore warnings (joblib/parallel cleanup)
+    warnings.filterwarnings("ignore", message=".*leaked semaphore.*")
+    warnings.filterwarnings("ignore", message=".*unclosed file.*")
     from server import state
 
     # Stop the model worker child process

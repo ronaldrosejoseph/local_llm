@@ -113,6 +113,15 @@ class ModelManager:
             except Exception:
                 pass
 
+            # Close stdin pipe now — the worker may exit before we get to
+            # the pipe cleanup below, and an orphaned write-end triggers
+            # ResourceWarning about unclosed file fd=3.
+            if self.process and self.process.stdin:
+                try:
+                    self.process.stdin.close()
+                except Exception:
+                    pass
+
             # SIGTERM then SIGKILL
             try:
                 self.process.terminate()

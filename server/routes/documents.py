@@ -60,6 +60,7 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
 
         # 2. Handle Text Docs and Code Files for RAG
         text = ""
+        scanned_no_vision = False
         if safe_name.lower().endswith(".pdf"):
             from PyPDF2 import PdfReader
 
@@ -122,9 +123,10 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
                     return {"status": "ok", "chunks": len(img_paths), "total_pages": total_pages,
                             "filename": file.filename, "vision": True, "rag_status": rag_meta}
                 else:
-                    # No Vision + Scanned PDF = Empty RAG (existing fallback)
-                    print("No digital text and no Vision model active. Extracting minimal text.")
+                    # No Vision + Scanned PDF = mostly empty RAG
+                    print("No digital text and no Vision model active for scanned PDF.")
                     text = digital_text  # already sampled above
+                    scanned_no_vision = True
         else:
             text = content.decode("utf-8", errors="ignore")
 
@@ -141,7 +143,7 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
                       if len(text[i:i + chunk_size].strip()) > 20]
 
         if not chunks:
-            return {"status": "ok", "chunks": 0}
+            return {"status": "ok", "chunks": 0, "scanned_no_vision": scanned_no_vision}
 
         emb_model = get_embedder()
 
@@ -183,7 +185,8 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
         _, rag_meta = build_rag_context(chat_id, "")
 
         return {"status": "ok", "chunks": len(chunks), "filename": file.filename,
-                "rag_active": emb_model is not None, "rag_status": rag_meta}
+                "rag_active": emb_model is not None, "rag_status": rag_meta,
+                "scanned_no_vision": scanned_no_vision}
     except Exception as e:
         print(f"Error uploading doc: {e}")
         raise HTTPException(status_code=500, detail=str(e))
