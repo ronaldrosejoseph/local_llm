@@ -390,7 +390,18 @@ export async function sendMessage(text = null) {
                 .then(res => res.json())
                 .then(data => {
                     if (data.title) {
-                        elements.currentChatTitle.textContent = data.title;
+                        if (state.currentChatId === requestChatId) {
+                            elements.currentChatTitle.textContent = data.title;
+                        }
+                        // Update sidebar item directly
+                        const item = document.querySelector(`.history-item[data-chat-id="${requestChatId}"]`);
+                        if (item) {
+                            const contentDiv = item.querySelector('.history-item-content');
+                            if (contentDiv) {
+                                const textNode = [...contentDiv.childNodes].find(n => n.nodeType === Node.TEXT_NODE);
+                                if (textNode) textNode.textContent = data.title;
+                            }
+                        }
                         loadChatHistory();
                     }
                 })

@@ -75,6 +75,16 @@ async def generate_title_route(chat_id: str):
     return await internal_generate_title(chat_id)
 
 
+def _clean_title(title: str) -> str:
+    """Post-process a generated title: strip parenthetical notes, limit word count."""
+    title = re.sub(r'\s*\([^)]*\)\s*', ' ', title).strip()
+    title = title.rstrip('.,;:!?)-"\'')
+    words = title.split()
+    if len(words) > 8:
+        title = " ".join(words[:8])
+    return title.strip()
+
+
 async def internal_generate_title(chat_id: str):
     """
     Internal helper to summarize chat context into a title.
@@ -194,6 +204,20 @@ async def internal_generate_title(chat_id: str):
     )
     clean_text = clean_text.strip("[]\"' ")
 
+    # Strip common disclaimer/refusal boilerplate from start of assistant
+    # responses — prevents titles like "Medical advice disclaimer" when the
+    # LLM leads with "I am an AI and cannot provide medical advice..."
+    clean_text = re.sub(
+        r"(Assistant:\s*)I\b[^.]*?\b(?:cannot|cannot|can\'t)\b[^.]*?"
+        r"\b(?:advice|diagnosis|opinion|consultation)\b[^.]*?\.\s*",
+        r'\1', clean_text, flags=re.IGNORECASE,
+    )
+    clean_text = re.sub(
+        r"(Assistant:\s*)As\b[^.]*?\b(?:cannot|cannot|can\'t)\b[^.]*?"
+        r"\b(?:advice|diagnosis|opinion|consultation)\b[^.]*?\.\s*",
+        r'\1', clean_text, flags=re.IGNORECASE,
+    )
+
     # 3. On first title generation, short prompts don't need an LLM.
     #    For title updates use the LLM — the conversation may have evolved.
     if chat["title_is_fallback"]:
@@ -241,6 +265,7 @@ async def internal_generate_title(chat_id: str):
 
         title = await asyncio.to_thread(_gen_with_main)
         if title:
+            title = _clean_title(title)
             with closing(get_db_connection()) as conn:
                 conn.execute(
                     "UPDATE chats SET title = ?, title_is_fallback = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
@@ -295,6 +320,7 @@ async def internal_generate_title(chat_id: str):
         title = result.get("title", "").strip().strip('"').strip("'")
         if not title:
             return {"error": "Empty title"}
+        title = _clean_title(title)
 
         with closing(get_db_connection()) as conn:
             conn.execute(

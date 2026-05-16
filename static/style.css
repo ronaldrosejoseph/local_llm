@@ -589,6 +589,13 @@ html {
     gap: 10px;
 }
 
+#current-chat-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 500px;
+}
+
 .model-badge {
     background-color: var(--accent-color);
     color: #000;

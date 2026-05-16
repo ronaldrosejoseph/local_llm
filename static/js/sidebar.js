@@ -104,7 +104,18 @@ export async function loadChat(chatId, title, isFallback = false) {
                 .then(data => {
                     if (data.title && data.status !== 'fallback' && data.status !== 'still_fallback' && data.status !== 'already_exists') {
                         console.log("Title upgraded successfully:", data.title);
-                        elements.currentChatTitle.textContent = data.title;
+                        if (state.currentChatId === chatId) {
+                            elements.currentChatTitle.textContent = data.title;
+                        }
+                        // Update sidebar item directly
+                        const item = document.querySelector(`.history-item[data-chat-id="${chatId}"]`);
+                        if (item) {
+                            const contentDiv = item.querySelector('.history-item-content');
+                            if (contentDiv) {
+                                const textNode = [...contentDiv.childNodes].find(n => n.nodeType === Node.TEXT_NODE);
+                                if (textNode) textNode.textContent = data.title;
+                            }
+                        }
                         loadChatHistory(); // Refresh sidebar
                     }
                 })
