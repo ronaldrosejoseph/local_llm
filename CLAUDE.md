@@ -14,6 +14,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Graceful shutdown
 ./stop.sh
 
+# Completely remove the project, including HF model cache (optional)
+./uninstall.sh
+
 # Run server directly (prints to stdout instead of server.log)
 ./venv/bin/python3 server.py
 

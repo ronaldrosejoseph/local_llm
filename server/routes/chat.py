@@ -89,7 +89,7 @@ async def internal_generate_title(chat_id: str):
 
         # Collect all user prompts for a lightweight full-context option
         all_user_msgs = conn.execute(
-            "SELECT content FROM messages WHERE chat_id = ? AND role = 'user' ORDER BY timestamp DESC",
+            "SELECT content FROM messages WHERE chat_id = ? AND role = 'user' ORDER BY timestamp ASC",
             (chat_id,)
         ).fetchall()
         if not all_user_msgs:
@@ -97,14 +97,37 @@ async def internal_generate_title(chat_id: str):
 
         all_user_text = " | ".join([m["content"] for m in all_user_msgs])
         all_user_words = len(all_user_text.split())
-        latest_user_content = (all_user_msgs[0]["content"] or "").strip()
+        latest_user_content = (all_user_msgs[-1]["content"] or "").strip()
+
+        # Programmatic titles for attachments and image commands — skip LLM.
+        first_msg = (all_user_msgs[0]["content"] or "").strip()
+        prog_title = None
+        doc_match = re.match(r'^\[Attached (Document|Scanned Document): (.+?)\]', first_msg)
+        if doc_match:
+            prog_title = f"Doc: {doc_match.group(2).strip()[:60]}"
+        img_match = re.match(r'^\[Attached Image: (.+?)\]', first_msg)
+        if img_match:
+            prog_title = f"Image: {img_match.group(1).strip()[:60]}"
+        if first_msg.startswith("/imagine"):
+            prompt = first_msg[8:].strip()[:50]
+            prog_title = f"Generated: {prompt}" if prompt else "Generated Image"
+        if first_msg.startswith("/edit"):
+            prog_title = "Edited Image"
+        if prog_title:
+            conn.execute(
+                "UPDATE chats SET title = ?, title_is_fallback = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (prog_title, chat_id),
+            )
+            conn.commit()
+            print(f"Title Gen: Programmatic title '{prog_title}' for {chat_id}")
+            return {"title": prog_title}
 
         source_text = ""
         if not chat["summary"] and all_user_words >= 6:
             # Short conversation — include assistant responses as well so the
             # title model has both sides of the exchange for better summaries.
             all_msgs = conn.execute(
-                "SELECT role, content FROM messages WHERE chat_id = ? ORDER BY timestamp DESC",
+                "SELECT role, content FROM messages WHERE chat_id = ? ORDER BY timestamp ASC",
                 (chat_id,)
             ).fetchall()
             formatted_parts = []
@@ -178,14 +201,15 @@ async def internal_generate_title(chat_id: str):
     #    Never blocks the main model — runs in its own MLX process.
     prompt_txt = (
         "You are a title generator. Your ONLY job is to read the text below "
-        "which is a conversation between a user and a digital assistant and "
+        "which is a conversation between a user and a digital assistant "
         "and produce a short 3–6 word label that describes the TOPIC or SUBJECT.\n\n"
         "CRITICAL RULES:\n"
         "- Output a TOPIC LABEL, NOT an answer, opinion, moral, or response.\n"
         "- Do NOT include: think tags, reasoning tags, XML tags, or any markup.\n"
         "- Do NOT use: emojis, asterisks, **, quotes, brackets, colons, punctuation, "
         "or any special symbols.\n"
-        "Now label this text with a 3–6 word topic with no extra text, no formatting:\n\n"
+        "Now extract the topic from this text in a 3–6 words with no extra text, no headings, no formatting:\n\n"
+        "Verify that the output is strictly a concise label with no extra text, no headings, no text formatting, and no Topic label:\n\n"
         f"{clean_text}"
     )
 

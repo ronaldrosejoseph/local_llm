@@ -104,6 +104,7 @@
 | `start.sh` | Bootstrap script: installs Homebrew/Python if needed, creates venv, installs deps, inits DB, launches server. |
 | `stop.sh` | Graceful shutdown via PID file. |
 | `restart.sh` | Stop + start. |
+| `uninstall.sh` | Stop server, optionally remove HF model cache, remove entire project. |
 | `database/chats.db` | SQLite database with tables: `chats`, `messages`, `models`, `documents`, `settings`. |
 
 ---
@@ -187,14 +188,15 @@ The chat endpoint uses a two-layer memory system instead of sending the entire c
 - Configurable via `config.json`: `rolling_window_max_tokens`, `summary_max_tokens`, `context_window_pct` (1-100% of model's full context — lower = less RAM).
 
 ### Dynamic Title Refinement
-The chat title evolves as the conversation progresses to maintain relevance:
-- **Separate title model**: Uses `mlx-community/Llama-3.2-1B-Instruct-4bit` (1B params, 4-bit) in its own one-shot process (`title_worker.py`). Title generation never blocks the main model or requires the generation lock.
-- **Tiered Context Strategy**:
-  - **Turn 1**: Uses the first message (cleaned of commands).
-  - **Turns 3-9**: Uses the last 3 message pairs (User + Assistant) to refine context.
-  - **Turn 10+**: Uses the **Progressive Summary** as the definitive source for the title.
-- **Triggering**: The frontend triggers a refinement on the first turn and every 3 turns thereafter.
+The chat title is auto-refined after the first turn and every 3 turns by the frontend:
+- **Separate title model**: Uses `mlx-community/Llama-3.2-1B-Instruct-4bit` (1B params, 4-bit) in its own one-shot process (`title_worker.py`). Title generation never blocks the main model.
+- **Context Strategy** (tiered by conversation state):
+  - **No summary + ≥6 user words**: All messages (user + assistant) with `User:`/`Assistant:` labels. Assistant messages truncated at 300 words.
+  - **Summary exists**: Summary text + latest 4 messages as a sanity check.
+  - **Latest user message < 7 chars**: Uses just that message (handles single-word queries).
+  - **Otherwise**: Last 10 messages with role labels.
 - **Protocol**: stdin JSON `{"prompt": "..."}` → stdout JSON `{"title": "..."}`. 3–6 word output.
+- **Prompt rules**: No think tags, no emojis, no special symbols, plain text only.
 
 ### Image Generation
 - Uses `mflux` library (FLUX.1 Schnell, 4-bit quantized).

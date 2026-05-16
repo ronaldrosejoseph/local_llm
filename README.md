@@ -29,7 +29,7 @@ This application transforms your machine into a fully private AI workstation:
 - **Apple MLX Engine**: Experience lightning-fast text generation using quantized `mlx-community` LLMs without draining your battery.
 - **Local & Private**: All inference, embedding, and chat history stay 100% locally on your machine.
 - **Persistent Memory**: Chat histories are saved securely to a SQLite database and can be resumed at any time.
-- **Dynamic Chat Titles**: Titles are auto-generated from your first message and automatically refine themselves every 3 turns. The system uses a tiered strategy (First Msg → Recent Context → Progressive Summary) to ensure the title always reflects the current topic.
+- **Dynamic Chat Titles**: Titles are auto-generated from your first message and automatically refine themselves every 3 turns. The system uses a tiered strategy (Conversation Context → Summary + Latest → Recent Messages) to ensure the title always reflects the current topic.
 - **Reusable System Prompts**: 24 built-in persona templates (Professors, Financial Analysts, Chefs, etc.) that can be searched, loaded, modified, and saved. Create your own templates and reuse them across chats.
 - **Generation Stats**: Token count and tokens-per-second are displayed after every assistant response and persist across sessions.
 
@@ -142,6 +142,9 @@ Control your FastAPI application running in the background natively:
 
 # Flush and restart (Useful when changing underlying backend code)
 ./restart.sh
+
+# Uninstall: stop server, optionally delete HF model cache, remove project
+./uninstall.sh
 ```
 
 **Access the Chat**: Open your browser and navigate to [http://localhost:8000](http://localhost:8000).
