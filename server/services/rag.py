@@ -53,18 +53,27 @@ CODE_EXTENSIONS = {
 def get_embedder():
     """Lazy-load the SentenceTransformer embedding model."""
     if state.embedder_model is None:
+        from server.services.llm import set_offline_mode
+
+        # Temporarily allow network access for first-time download
+        was_offline = os.environ.get("HF_HUB_OFFLINE", "0") == "1"
+        if was_offline:
+            set_offline_mode(False)
+
         try:
             from sentence_transformers import SentenceTransformer
             import transformers
             transformers.logging.set_verbosity_error()
-            
-            # Set local_files_only=False allows fallback to cache if offline
+
             state.embedder_model = SentenceTransformer("all-MiniLM-L6-v2")
             print("Embedder model loaded successfully.")
         except Exception as e:
             print(f"CRITICAL: Failed to load embedder model: {e}")
-            # Do not set embedder_model to anything so we can retry later
             return None
+        finally:
+            if was_offline:
+                set_offline_mode(True)
+
     return state.embedder_model
 
 
