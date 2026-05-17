@@ -399,27 +399,29 @@
                     </button>
                 </div>
 
-                <!-- Model Cache -->
+                <!-- App Data Cleanup -->
                 <div class="settings-section">
-                    <h3 class="settings-section-title">🗑️ Model Cache</h3>
+                    <h3 class="settings-section-title">🗑️ App Data</h3>
                     <p class="settings-section-desc" style="color:#f0a040;">
-                        ⚠️ Only use this when you are removing the app. All downloaded models will be deleted from disk.
-                        You will need to re-download models the next time you launch the app.
+                        ⚠️ Only use this when you are removing the app. Deletes all downloaded models
+                        (<code>~/.cache/huggingface</code>) and app data
+                        (<code>~/Library/Application Support/Local LLM</code>).
+                        You will need to re-download everything the next time you launch.
                     </p>
                     <div id="hf-cache-info" style="font-size:12px; color:var(--text-muted); margin-bottom:10px;">
-                        Loading cache size…
+                        Loading…
                     </div>
                     <div id="hf-cache-delete-area">
                         <button id="hf-cache-delete-start-btn" style="background: transparent; border: 1px solid rgba(255,85,85,0.4); color: #ff5555; padding: 6px 14px; border-radius: 6px; font-size: 12px; cursor: pointer;">
-                            <i data-lucide="trash-2" style="width:13px;height:13px;"></i> Delete Model Cache…
+                            <i data-lucide="trash-2" style="width:13px;height:13px;"></i> Delete All App Data…
                         </button>
                     </div>
                     <div id="hf-cache-confirm-area" style="display:none;">
                         <p style="font-size:12px; color:#ff5555; margin:8px 0;">
-                            Type <code style="background:rgba(255,85,85,0.1);padding:1px 4px;border-radius:3px;">DELETE ALL MODELS</code> below to confirm.
+                            Type <code style="background:rgba(255,85,85,0.1);padding:1px 4px;border-radius:3px;">DELETE ALL APP DATA</code> below to confirm.
                         </p>
                         <div style="display:flex;gap:8px;">
-                            <input type="text" id="hf-cache-confirm-input" placeholder="DELETE ALL MODELS"
+                            <input type="text" id="hf-cache-confirm-input" placeholder="DELETE ALL APP DATA"
                                 style="flex:1;background:rgba(255,85,85,0.05);border:1px solid rgba(255,85,85,0.3);color:#ff8080;padding:6px 10px;border-radius:6px;font-size:12px;">
                             <button id="hf-cache-confirm-btn" disabled
                                 style="background:#cc3333;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">

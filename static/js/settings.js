@@ -356,12 +356,12 @@ export async function loadHfCacheInfo() {
         if (!res.ok) throw new Error('Failed to load');
         const data = await res.json();
         if (data.size_bytes === 0) {
-            infoEl.textContent = 'No model cache found on disk.';
+            infoEl.textContent = 'No app data or model cache found on disk.';
         } else {
-            infoEl.textContent = `Cache size: ${formatBytes(data.size_bytes)} (${data.path})`;
+            infoEl.textContent = `Total size: ${formatBytes(data.size_bytes)}`;
         }
     } catch (err) {
-        infoEl.textContent = 'Could not determine cache size.';
+        infoEl.textContent = 'Could not determine data size.';
     }
 }
 
@@ -385,12 +385,12 @@ export function initHfCacheUI() {
 
     // Step 2: Enable confirm button only when exact text is typed
     confirmInput.addEventListener('input', () => {
-        confirmBtn.disabled = confirmInput.value.trim() !== 'DELETE ALL MODELS';
+        confirmBtn.disabled = confirmInput.value.trim() !== 'DELETE ALL APP DATA';
     });
 
     // Step 3: Execute deletion
     confirmBtn.addEventListener('click', async () => {
-        if (confirmInput.value.trim() !== 'DELETE ALL MODELS') return;
+        if (confirmInput.value.trim() !== 'DELETE ALL APP DATA') return;
 
         startBtn.disabled = true;
         confirmBtn.disabled = true;
