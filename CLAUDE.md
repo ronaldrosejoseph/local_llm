@@ -17,7 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Graceful shutdown
 ./stop.sh
 
-# Completely remove the project, including HF model cache (optional)
+# Completely remove the project, including entire HF cache (optional)
 ./uninstall.sh
 
 # Run server directly (prints to stdout instead of server.log)
@@ -40,7 +40,7 @@ server/state.py        → All global mutable state (MODEL_NAME, model_manager, 
 server/config.py       → Read/write config.json (respects LOCAL_LLM_DATA_DIR env var)
 server/db.py           → SQLite connection helper (respects LOCAL_LLM_DATA_DIR env var)
 server/models.py       → Pydantic request/response models
-server/routes/         → API route handlers (chat, models, documents, config, speech, system_prompts)
+server/routes/         → API route handlers (chat, models, documents, config, speech, system_prompts, hf_token, hf_cache)
 macos_app/             → Swift app wrapper (WKWebView shell, native speech recognition)
 server/services/       → Business logic
     worker.py          → Child process: loads MLX models, handles generation via stdin/stdout JSON protocol

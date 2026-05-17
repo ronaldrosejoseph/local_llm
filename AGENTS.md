@@ -72,6 +72,7 @@
 | `server/routes/speech.py` | TTS via macOS `say` command. |
 | `server/routes/system_prompt_routes.py` | System prompt template CRUD: search, save, update, delete reusable personas. |
 | `server/routes/hf_token_routes.py` | HF token management: verify, save (to Keychain), delete, status check. |
+| `server/routes/hf_cache_routes.py` | App data cleanup: get combined size of HF cache + app data dir, delete both. Multi-step confirmation in Settings. |
 | `server/services/hf_auth.py` | Secure token storage via `keyring` (macOS Keychain). `verify_token()` uses direct HTTP to bypass offline mode. |
 
 ### Frontend
@@ -104,7 +105,7 @@
 | `start.sh` | Bootstrap script: installs Homebrew/Python if needed, creates venv, installs deps, inits DB, launches server. Detects bundled-vs-dev mode automatically — in bundled mode, writable state goes to `~/Library/Application Support/Local LLM/`. Sets `LOCAL_LLM_DATA_DIR` env var. |
 | `stop.sh` | Graceful shutdown via PID file. Detects bundled data directory same way as start.sh. |
 | `restart.sh` | Stop + start. |
-| `uninstall.sh` | Stop server, optionally remove HF model cache, remove entire project. |
+| `uninstall.sh` | Stop server, optionally remove entire HF cache (`~/.cache/huggingface`), remove project directory. |
 | `make_app.sh` | Builds a self-contained `Local LLM.app` + `Local LLM.dmg`. The project is bundled inside `Resources/project/` and the Swift wrapper uses `Bundle.main.resourcePath` at runtime (no path injection). |
 | `database/chats.db` | SQLite database with tables: `chats`, `messages`, `models`, `documents`, `settings`. In bundled mode, stored in the data directory. |
 
@@ -140,6 +141,8 @@
 | `POST` | `/api/hf-token/verify` | Verify a token without saving it |
 | `POST` | `/api/hf-token/save` | Verify and save a token to the Keychain |
 | `DELETE` | `/api/hf-token` | Remove the stored token |
+| `GET` | `/api/hf-cache/info` | Get combined size of `~/.cache/huggingface` + app data dir |
+| `DELETE` | `/api/hf-cache` | Delete both directories (Settings → App Data cleanup) |
 
 ---
 
@@ -147,7 +150,7 @@
 
 ### Model Management
 - Models must `mlx` compatible.
-- Models are stored in HF's cache at `~/.cache/huggingface/hub/`.
+- Models are stored in HF's cache at `~/.cache/huggingface/hub`.
 - The server attempts VLM load first (`mlx_vlm`), falls back to standard LLM (`mlx_lm`).
 - Only one model is loaded in GPU memory at a time. Switching unloads the previous model.
 - The `state.IS_VLM` flag controls which generation path is used.

@@ -379,6 +379,7 @@ export async function sendMessage(text = null) {
                 element.disabled = false;
             }
         });
+        elements.chatInput.focus();
 
         // Auto-generate/Refine title (First turn + every 3 turns)
         const userMsgCount = elements.messagesContainer.querySelectorAll('.message.user').length;
