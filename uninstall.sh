@@ -2,7 +2,7 @@
 set -e
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
-HF_CACHE="$HOME/.cache/huggingface/hub"
+HF_CACHE="$HOME/.cache/huggingface"
 
 echo "⚠️  This will remove the LLM server and optionally the HuggingFace model cache."
 echo "    Project: $PROJECT_DIR"

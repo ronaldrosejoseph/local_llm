@@ -10,12 +10,24 @@ import { showToast } from './toast.js';
 
 export function openSettings() {
     loadSettingsModels();
+    loadHfCacheInfo();
     elements.settingsModal.style.display = 'flex';
     setTimeout(() => elements.settingsModal.classList.add('active'), 10);
 }
 
 export function closeSettings() {
     elements.settingsModal.classList.remove('active');
+    // Reset cache delete UI to initial state
+    const confirmArea = document.getElementById('hf-cache-confirm-area');
+    const deleteArea = document.getElementById('hf-cache-delete-area');
+    const confirmInput = document.getElementById('hf-cache-confirm-input');
+    const confirmBtn = document.getElementById('hf-cache-confirm-btn');
+    const startBtn = document.getElementById('hf-cache-delete-start-btn');
+    if (confirmArea) confirmArea.style.display = 'none';
+    if (deleteArea) deleteArea.style.display = 'block';
+    if (confirmInput) confirmInput.value = '';
+    if (confirmBtn) confirmBtn.disabled = true;
+    if (startBtn) startBtn.disabled = false;
     setTimeout(() => elements.settingsModal.style.display = 'none', 300);
 }
 
@@ -324,4 +336,85 @@ export function initHfTokenUI() {
     checkHfTokenStatus();
     document.getElementById('hf-token-save-btn').addEventListener('click', saveHfToken);
     document.getElementById('hf-token-delete-btn').addEventListener('click', deleteHfToken);
+}
+
+// --- Model Cache Deletion ---
+
+function formatBytes(bytes) {
+    if (bytes === 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    const val = (bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0);
+    return `${val} ${units[i]}`;
+}
+
+export async function loadHfCacheInfo() {
+    const infoEl = document.getElementById('hf-cache-info');
+    if (!infoEl) return;
+    try {
+        const res = await fetch(`${API_URL}/api/hf-cache/info`);
+        if (!res.ok) throw new Error('Failed to load');
+        const data = await res.json();
+        if (data.size_bytes === 0) {
+            infoEl.textContent = 'No model cache found on disk.';
+        } else {
+            infoEl.textContent = `Cache size: ${formatBytes(data.size_bytes)} (${data.path})`;
+        }
+    } catch (err) {
+        infoEl.textContent = 'Could not determine cache size.';
+    }
+}
+
+export function initHfCacheUI() {
+    const startBtn = document.getElementById('hf-cache-delete-start-btn');
+    const confirmArea = document.getElementById('hf-cache-confirm-area');
+    const confirmInput = document.getElementById('hf-cache-confirm-input');
+    const confirmBtn = document.getElementById('hf-cache-confirm-btn');
+    const deleteArea = document.getElementById('hf-cache-delete-area');
+
+    if (!startBtn) return;
+
+    // Step 1: Show confirmation area
+    startBtn.addEventListener('click', () => {
+        deleteArea.style.display = 'none';
+        confirmArea.style.display = 'block';
+        confirmInput.value = '';
+        confirmBtn.disabled = true;
+        confirmInput.focus();
+    });
+
+    // Step 2: Enable confirm button only when exact text is typed
+    confirmInput.addEventListener('input', () => {
+        confirmBtn.disabled = confirmInput.value.trim() !== 'DELETE ALL MODELS';
+    });
+
+    // Step 3: Execute deletion
+    confirmBtn.addEventListener('click', async () => {
+        if (confirmInput.value.trim() !== 'DELETE ALL MODELS') return;
+
+        startBtn.disabled = true;
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Deleting…';
+
+        try {
+            const res = await fetch(`${API_URL}/api/hf-cache`, { method: 'DELETE' });
+            const data = await res.json();
+
+            if (data.error) {
+                showToast(data.error, 'error', 0);
+            } else {
+                const freed = formatBytes(data.deleted_bytes || 0);
+                showToast(`Model cache deleted (${freed} freed).`, 'success', 5000);
+            }
+        } catch (err) {
+            showToast(`Failed to delete cache: ${err.message}`, 'error');
+        }
+
+        // Reset UI
+        confirmArea.style.display = 'none';
+        deleteArea.style.display = 'block';
+        startBtn.disabled = false;
+        confirmBtn.textContent = 'Confirm Delete';
+        await loadHfCacheInfo();
+    });
 }

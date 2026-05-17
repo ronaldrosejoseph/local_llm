@@ -5,7 +5,8 @@ Configuration management — load/save generation parameters from config.json.
 import os
 import json
 
-CONFIG_PATH = "config.json"
+_DATA_DIR = os.environ.get("LOCAL_LLM_DATA_DIR", ".")
+CONFIG_PATH = os.path.join(_DATA_DIR, "config.json")
 DEFAULT_CONFIG = {
     "max_tokens": 8192,
     "temperature": 0.3,

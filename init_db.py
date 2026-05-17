@@ -1,13 +1,18 @@
 import sqlite3
 import os
 
-# Get the directory where init_db.py is located
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Use LOCAL_LLM_DATA_DIR if set (bundled .app mode), otherwise relative to this file
+_DATA_DIR = os.environ.get("LOCAL_LLM_DATA_DIR")
+if _DATA_DIR:
+    BASE_DIR = _DATA_DIR
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "database", "chats.db")
 
 def init_db():
-    if not os.path.exists("database"):
-        os.makedirs("database")
+    db_dir = os.path.dirname(DB_PATH)
+    if not os.path.exists(db_dir):
+        os.makedirs(db_dir)
     
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()

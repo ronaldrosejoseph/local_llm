@@ -2,7 +2,16 @@
 
 # stop.sh - Stops the LLM server
 
-PID_FILE="server.pid"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Detect if we're running from inside a .app bundle
+if [[ "$SCRIPT_DIR" == *".app/Contents/Resources/project" ]]; then
+    DATA_DIR="$HOME/Library/Application Support/Local LLM"
+else
+    DATA_DIR="$SCRIPT_DIR"
+fi
+
+PID_FILE="$DATA_DIR/server.pid"
 SERVER_RUNNING=false
 
 # Check if server is running BEFORE we start killing anything

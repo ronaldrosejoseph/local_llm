@@ -5,6 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
+# Build self-contained .app + .dmg for distribution
+./make_app.sh
+
 # Start the server (full bootstrap: venv, deps, DB init, model load)
 ./start.sh
 
@@ -20,7 +23,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Run server directly (prints to stdout instead of server.log)
 ./venv/bin/python3 server.py
 
-# View logs
+# View logs (in dev mode; in bundled mode logs are in ~/Library/Application Support/Local LLM/)
 tail -f server.log
 ```
 
@@ -34,10 +37,11 @@ This is a self-hosted, privacy-first AI chat app for macOS with Apple Silicon. *
 server.py              → Entry point: sets HF_HUB_OFFLINE=1, runs uvicorn
 server/app.py          → FastAPI app assembly, router includes, crash recovery, ModelManager init
 server/state.py        → All global mutable state (MODEL_NAME, model_manager, generation_lock, document_store, etc.)
-server/config.py       → Read/write config.json
-server/db.py           → SQLite connection helper
+server/config.py       → Read/write config.json (respects LOCAL_LLM_DATA_DIR env var)
+server/db.py           → SQLite connection helper (respects LOCAL_LLM_DATA_DIR env var)
 server/models.py       → Pydantic request/response models
 server/routes/         → API route handlers (chat, models, documents, config, speech, system_prompts)
+macos_app/             → Swift app wrapper (WKWebView shell, native speech recognition)
 server/services/       → Business logic
     worker.py          → Child process: loads MLX models, handles generation via stdin/stdout JSON protocol
     title_worker.py    → One-shot child process: loads a small 1B model (Llama-3.2-1B-Instruct-4bit) for title generation only — never blocks the main model
@@ -141,3 +145,10 @@ All server modules import `server.state` and read/write module-level attributes 
 ### Environment
 - `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1` are set at the top of `server.py` before any HF imports
 - Temporarily unset to `0` during model downloads (in `server/services/llm.py` and `server/routes/model_routes.py`)
+- `LOCAL_LLM_DATA_DIR` — Set by `start.sh` when running in bundled .app mode. Points to `~/Library/Application Support/Local LLM/`. Python code reads this for writable paths (config, database, venv); falls back to file-relative or CWD when unset.
+
+### Bundled .app mode
+- `start.sh` / `stop.sh` detect if running from `.app/Contents/Resources/project` and redirect writable state to `~/Library/Application Support/Local LLM/`
+- `make_app.sh` bundles the project into `Resources/project/` via rsync (excludes .git, venv, database, etc.), compiles the Swift wrapper, and creates a .dmg
+- The Swift wrapper uses `Bundle.main.resourcePath + "/project"` — no path injection needed
+- Status polling in the loading screen checks the data directory first, then falls back to the project directory

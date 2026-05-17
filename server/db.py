@@ -5,9 +5,13 @@ Database connection helper.
 import sqlite3
 import os
 
-# Use absolute path relative to this file
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_PATH = os.path.join(BASE_DIR, "database", "chats.db")
+# Use LOCAL_LLM_DATA_DIR if set (bundled .app mode), otherwise relative to this file
+_DATA_DIR = os.environ.get("LOCAL_LLM_DATA_DIR")
+if _DATA_DIR:
+    DB_PATH = os.path.join(_DATA_DIR, "database", "chats.db")
+else:
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    DB_PATH = os.path.join(BASE_DIR, "database", "chats.db")
 
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)

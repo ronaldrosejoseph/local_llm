@@ -99,19 +99,27 @@ This application transforms your machine into a fully private AI workstation:
 
 ### 2. Native macOS Application (Recommended for All Users) 🍎
 
-For the most premium and seamless experience, use the pre-built macOS application. This provides a dedicated window for your AI and handles all server management for you.
+For the most premium and seamless experience, download the pre-built macOS application. This provides a dedicated window for your AI and handles all server management for you.
 
-1.  **Clone & Navigate**: Open your terminal and clone the repository:
-    ```bash
-    git clone https://github.com/ronaldrosejoseph/local_llm.git
-    cd local_llm
-    ```
-2.  **Build**: Run **`./make_app.sh`** to build the application. This will create **`Local LLM.app`** in the project folder.
-3.  **Launch**: Double-click **`Local LLM.app`**. (You can move this to your `/Applications` folder for easy access).
+1.  **Download**: Grab the latest **`Local LLM.dmg`** from the [Releases page](https://github.com/ronaldrosejoseph/local_llm/releases).
+2.  **Install**: Open the `.dmg`, drag **`Local LLM.app`** into your `/Applications` folder.
+3.  **Launch**: Double-click **`Local LLM.app`**.
 4.  **Startup**: A loading spinner will appear while the backend server boots up.
 > [!IMPORTANT]
-> **First Boot**: The very first launch will take **several minutes** as it automatically downloads the required Python environment and the baseline LLM model.
+> **First Boot**: The very first launch will take **several minutes** as it automatically installs the required Python environment and downloads the baseline LLM model. Progress is shown in the loading screen.
 5.  **Shutdown**: Closing the app window (or Cmd+Q) will automatically shut down the LLM server and free up your Mac's memory.
+
+#### 🛠️ Building from Source
+
+If you prefer to build the app yourself:
+
+```bash
+git clone https://github.com/ronaldrosejoseph/local_llm.git
+cd local_llm
+./make_app.sh
+```
+
+This creates both **`Local LLM.app`** and **`Local LLM.dmg`** in the project directory. The `.app` bundles the entire project and is fully self-contained — no separate clone or setup required for users.
 
 ---
 

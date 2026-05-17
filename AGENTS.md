@@ -99,13 +99,14 @@
 | File | Purpose |
 |------|---------|
 | `init_db.py` | Database schema creation and migrations. Run once on first startup. |
-| `config.json` | Runtime config (temperature, max_tokens, top_p, etc.). Read/written by server. |
+| `config.json` | Runtime config (temperature, max_tokens, top_p, etc.). Read/written by server. In bundled mode, stored in `~/Library/Application Support/Local LLM/` (writable data directory) and seeded from the bundle's default on first launch. |
 | `requirements.txt` | Python dependencies. |
-| `start.sh` | Bootstrap script: installs Homebrew/Python if needed, creates venv, installs deps, inits DB, launches server. |
-| `stop.sh` | Graceful shutdown via PID file. |
+| `start.sh` | Bootstrap script: installs Homebrew/Python if needed, creates venv, installs deps, inits DB, launches server. Detects bundled-vs-dev mode automatically — in bundled mode, writable state goes to `~/Library/Application Support/Local LLM/`. Sets `LOCAL_LLM_DATA_DIR` env var. |
+| `stop.sh` | Graceful shutdown via PID file. Detects bundled data directory same way as start.sh. |
 | `restart.sh` | Stop + start. |
 | `uninstall.sh` | Stop server, optionally remove HF model cache, remove entire project. |
-| `database/chats.db` | SQLite database with tables: `chats`, `messages`, `models`, `documents`, `settings`. |
+| `make_app.sh` | Builds a self-contained `Local LLM.app` + `Local LLM.dmg`. The project is bundled inside `Resources/project/` and the Swift wrapper uses `Bundle.main.resourcePath` at runtime (no path injection). |
+| `database/chats.db` | SQLite database with tables: `chats`, `messages`, `models`, `documents`, `settings`. In bundled mode, stored in the data directory. |
 
 ---
 
@@ -357,3 +358,4 @@ The frontend reads SSE streams token-by-token. Key data fields:
 ### Environment Variables
 - `HF_HUB_OFFLINE` / `TRANSFORMERS_OFFLINE` — Set to `"1"` at startup in `server.py` to prevent network requests. Temporarily set to `"0"` during model downloads.
 - `HF_TOKEN` — Set at startup from the Keychain (via `hf_auth.load_hf_token()`). Passed to the worker subprocess and used by FLUX image generation. Managed via Settings → 🔑 HuggingFace Token.
+- `LOCAL_LLM_DATA_DIR` — Set by `start.sh` when running in bundled .app mode. Points to `~/Library/Application Support/Local LLM/` where writable state (config, database, venv, logs, pids) is stored. Python code checks this env var for paths that need to be writable; falls back to the project directory (file-relative or CWD) when unset.
