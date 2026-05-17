@@ -20,6 +20,33 @@ from server.config import load_config
 from server.db import get_db_connection
 
 
+def _ensure_flux_downloaded(q: queue.Queue):
+    """Pre-download FLUX.1-schnell model repos if not already cached.
+
+    Calls huggingface_hub.snapshot_download directly (bypassing mflux's own
+    resolution) so we can surface clear errors before the heavy Flux1()
+    constructor runs.  Only downloads repos whose snapshots are missing.
+    """
+    from huggingface_hub import snapshot_download
+
+    # The repos and file patterns that FLUX.1-schnell needs
+    flux_repo = "black-forest-labs/FLUX.1-schnell"
+    flux_patterns = [
+        "text_encoder/*.safetensors", "text_encoder/*.json",
+        "text_encoder_2/*.safetensors", "text_encoder_2/*.json",
+        "transformer/*.safetensors", "transformer/*.json",
+        "vae/*.safetensors", "vae/*.json",
+        "tokenizer/**", "tokenizer_2/**",
+    ]
+
+    from server.services.llm import is_model_cached
+    if is_model_cached(flux_repo):
+        return  # Already cached, nothing to do
+
+    q.put({"model_badge": "Downloading FLUX...", "model_badge_pulse": True})
+    snapshot_download(repo_id=flux_repo, allow_patterns=flux_patterns)
+
+
 def run_flux_pipeline(prompt: str, chat_id: str, q: queue.Queue, img_name: str,
                       source_image_path: str = None, strength: float = 0.15,
                       steps: int = 4, result_message: str = "Here is the image you requested:"):
@@ -41,9 +68,16 @@ def run_flux_pipeline(prompt: str, chat_id: str, q: queue.Queue, img_name: str,
         except Exception:
             pass
 
-        # Temporarily go online so mflux can download FLUX weights
+        # Temporarily go online so mflux can download FLUX weights.
+        # We also reset the shared httpx session so the HTTP client
+        # picks up the new offline=False state cleanly.
         from server.services.llm import set_offline_mode
         set_offline_mode(False)
+        try:
+            from huggingface_hub.utils._http import close_session
+            close_session()
+        except Exception:
+            pass
 
         from mflux.models.common.config import ModelConfig
         from mflux.models.flux.variants.txt2img.flux import Flux1
@@ -56,14 +90,18 @@ def run_flux_pipeline(prompt: str, chat_id: str, q: queue.Queue, img_name: str,
 
         os.makedirs("static/images", exist_ok=True)
 
+        # Pre-download FLUX repos before the heavy Flux1() constructor.
+        # This gives us clean error messages if the download fails.
+        _ensure_flux_downloaded(q)
+
         class ProgressCB(InLoopCallback):
             def call_in_loop(self, t, seed, prompt, latents, config, time_steps, **kwargs):
                 if time_steps and time_steps.total > 0:
                     progress = int((time_steps.n / time_steps.total) * 100)
                     q.put({"progress": progress})
 
-        # Signal badge: downloading/loading the image model
-        q.put({"model_badge": "Downloading FLUX...", "model_badge_pulse": True})
+        # Signal badge: loading the image model
+        q.put({"model_badge": "Loading FLUX...", "model_badge_pulse": True})
 
         flux = Flux1(
             model_config=ModelConfig.from_name(model_name="schnell"),
@@ -117,8 +155,12 @@ def run_flux_pipeline(prompt: str, chat_id: str, q: queue.Queue, img_name: str,
         q.put({"image": img_name})
     except Exception as e:
         err_str = str(e)
-        # Detect gated repository / terms-not-accepted errors from HuggingFace
-        if any(kw in err_str.lower() for kw in ("401", "403", "gated", "access", "terms", "repository not found")):
+        # Detect gated repository / terms-not-accepted / offline-cache-miss errors
+        if any(kw in err_str.lower() for kw in (
+            "401", "403", "gated", "access", "terms", "repository not found",
+            "cannot find the requested files", "local cache",
+            "offline mode is enabled",
+        )):
             err_str = (
                 "HuggingFace requires you to accept the terms for **FLUX.1-schnell**.\n\n"
                 "1. Log into your HuggingFace account\n"
