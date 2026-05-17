@@ -41,6 +41,10 @@ def run_flux_pipeline(prompt: str, chat_id: str, q: queue.Queue, img_name: str,
         except Exception:
             pass
 
+        # Temporarily go online so mflux can download FLUX weights
+        from server.services.llm import set_offline_mode
+        set_offline_mode(False)
+
         from mflux.models.common.config import ModelConfig
         from mflux.models.flux.variants.txt2img.flux import Flux1
         from mflux.callbacks.callback import InLoopCallback
@@ -66,6 +70,9 @@ def run_flux_pipeline(prompt: str, chat_id: str, q: queue.Queue, img_name: str,
             quantize=4
         )
         flux.callbacks.register(ProgressCB())
+
+        # Restore offline mode now that FLUX is loaded
+        set_offline_mode(True)
 
         # Signal badge: image model is now active
         q.put({"model_badge": "FLUX.1 schnell", "model_badge_pulse": False})
@@ -109,7 +116,19 @@ def run_flux_pipeline(prompt: str, chat_id: str, q: queue.Queue, img_name: str,
 
         q.put({"image": img_name})
     except Exception as e:
-        q.put({"error": str(e)})
+        err_str = str(e)
+        # Detect gated repository / terms-not-accepted errors from HuggingFace
+        if any(kw in err_str.lower() for kw in ("401", "403", "gated", "access", "terms", "repository not found")):
+            err_str = (
+                "HuggingFace requires you to accept the terms for **FLUX.1-schnell**.\n\n"
+                "1. Log into your HuggingFace account\n"
+                f"2. Go to [black-forest-labs/FLUX.1-schnell](https://huggingface.co/black-forest-labs/FLUX.1-schnell)\n"
+                "3. Click **Agree to access repository** on the model card\n\n"
+                "After that, try `/imagine` again."
+            )
+            q.put({"error": err_str})
+        else:
+            q.put({"error": err_str})
     finally:
         # ALWAYS reload the LLM in the child process, even if FLUX crashed
         try:
@@ -154,6 +173,7 @@ async def flux_sse_generator(chat_id: str, q: queue.Queue,
                 break
             elif "error" in msg:
                 err_val = msg['error']
+                yield f'data: {json.dumps({"toast": {"message": err_val, "type": "error", "duration": 0}})}\n\n'
                 yield f'data: {json.dumps({"replace": f"**Error:** {err_val}"})}\n\n'
                 break
         except queue.Empty:

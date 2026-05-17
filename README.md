@@ -135,7 +135,7 @@ chmod +x start.sh stop.sh restart.sh
 > [!IMPORTANT]
 > **First Boot**: The initial run will take **several minutes** to download the Python environment and baseline models.
 
-*(Note: The very first time you execute an image generation command, the `mflux` library will forcibly intercept your command to download the FLUX.1 baseline models locally, which consumes roughly **~24GB** of space inside `~/.cache/`. Do not interrupt this process.)*
+*(Note: The very first time you execute an image generation command, the `mflux` library will forcibly intercept your command to download the FLUX.1 baseline models locally, which consumes roughly **~58GB** of space inside `~/.cache/`. Do not interrupt this process.)*
 
 ### 4. Server Management
 

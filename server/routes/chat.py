@@ -500,7 +500,10 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                     "**⚠️ HuggingFace Token Required**\n\n"
                     "To use `/imagine`, add your HuggingFace token in "
                     "**Settings → 🔑 HuggingFace Token**. "
-                    "It's stored securely in your macOS Keychain."
+                    "It's stored securely in your macOS Keychain.\n\n"
+                    "You also need to accept the terms for [FLUX.1-schnell]"
+                    "(https://huggingface.co/black-forest-labs/FLUX.1-schnell) "
+                    "by clicking **Agree to access repository** on its model card."
                 )
                 yield f"data: {json.dumps({'chat_id': chat_id})}\n\n"
                 yield f"data: {json.dumps({'content': msg})}\n\n"
@@ -533,7 +536,10 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                     "**⚠️ HuggingFace Token Required**\n\n"
                     "To use `/edit`, add your HuggingFace token in "
                     "**Settings → 🔑 HuggingFace Token**. "
-                    "It's stored securely in your macOS Keychain."
+                    "It's stored securely in your macOS Keychain.\n\n"
+                    "You also need to accept the terms for [FLUX.1-schnell]"
+                    "(https://huggingface.co/black-forest-labs/FLUX.1-schnell) "
+                    "by clicking **Agree to access repository** on its model card."
                 )
                 yield f"data: {json.dumps({'chat_id': chat_id})}\n\n"
                 yield f"data: {json.dumps({'content': msg})}\n\n"

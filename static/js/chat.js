@@ -165,6 +165,15 @@ export async function sendMessage(text = null) {
                             }
                         }
 
+                        if (data.toast) {
+                            showToast(
+                                data.toast.message,
+                                data.toast.type || 'info',
+                                data.toast.duration || 5000
+                            );
+                            continue;
+                        }
+
                         if (data.gen_stats) {
                             serverStats = data.gen_stats;
                             continue;
