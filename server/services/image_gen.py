@@ -43,8 +43,10 @@ def _ensure_flux_downloaded(q: queue.Queue):
     if is_model_cached(flux_repo):
         return  # Already cached, nothing to do
 
+    # Explicitly pass the token so gated-repo downloads succeed
+    token = os.environ.get("HF_TOKEN")
     q.put({"model_badge": "Downloading FLUX...", "model_badge_pulse": True})
-    snapshot_download(repo_id=flux_repo, allow_patterns=flux_patterns)
+    snapshot_download(repo_id=flux_repo, allow_patterns=flux_patterns, token=token)
 
 
 def run_flux_pipeline(prompt: str, chat_id: str, q: queue.Queue, img_name: str,
@@ -61,21 +63,15 @@ def run_flux_pipeline(prompt: str, chat_id: str, q: queue.Queue, img_name: str,
     """
     state.generation_lock.acquire()
     try:
+        # Temporarily go online so mflux can download FLUX weights.
+        # Must happen BEFORE load_hf_token so the login call succeeds.
+        from server.services.llm import set_offline_mode
+        set_offline_mode(False)
+
         # Ensure HF token is active for gated model access (FLUX.1)
         try:
             from server.services.hf_auth import load_hf_token
             load_hf_token()
-        except Exception:
-            pass
-
-        # Temporarily go online so mflux can download FLUX weights.
-        # We also reset the shared httpx session so the HTTP client
-        # picks up the new offline=False state cleanly.
-        from server.services.llm import set_offline_mode
-        set_offline_mode(False)
-        try:
-            from huggingface_hub.utils._http import close_session
-            close_session()
         except Exception:
             pass
 
@@ -154,13 +150,16 @@ def run_flux_pipeline(prompt: str, chat_id: str, q: queue.Queue, img_name: str,
 
         q.put({"image": img_name})
     except Exception as e:
+        import traceback
+        print(f"FLUX error: {e}")
+        traceback.print_exc()
         err_str = str(e)
-        # Detect gated repository / terms-not-accepted / offline-cache-miss errors
-        if any(kw in err_str.lower() for kw in (
-            "401", "403", "gated", "access", "terms", "repository not found",
-            "cannot find the requested files", "local cache",
-            "offline mode is enabled",
-        )):
+        err_lower = err_str.lower()
+        # Detect gated repository / terms-not-accepted errors (specific HF auth issues)
+        if any(kw in err_lower for kw in ("gated", "terms", "repository not found")) or (
+            any(code in err_lower for code in ("401", "403"))
+            and any(kw in err_lower for kw in ("unauthorized", "forbidden", "token", "gated"))
+        ):
             err_str = (
                 "HuggingFace requires you to accept the terms for **FLUX.1-schnell**.\n\n"
                 "1. Log into your HuggingFace account\n"
@@ -168,10 +167,25 @@ def run_flux_pipeline(prompt: str, chat_id: str, q: queue.Queue, img_name: str,
                 "3. Click **Agree to access repository** on the model card\n\n"
                 "After that, try `/imagine` again."
             )
-            q.put({"error": err_str})
-        else:
-            q.put({"error": err_str})
+        # Detect download / offline / network errors
+        elif any(kw in err_lower for kw in (
+            "cannot find the requested files", "local cache",
+            "offline mode is enabled", "connection", "timeout",
+        )):
+            err_str = (
+                "Failed to download the **FLUX.1-schnell** model.\n\n"
+                "Please check your internet connection and try `/imagine` again.\n\n"
+                "If the issue persists, ensure your HuggingFace token is configured "
+                "in **Settings → 🔑**."
+            )
+        q.put({"error": err_str})
     finally:
+        # Restore offline mode
+        try:
+            from server.services.llm import set_offline_mode
+            set_offline_mode(True)
+        except Exception:
+            pass
         # ALWAYS reload the LLM in the child process, even if FLUX crashed
         try:
             q.put({"model_badge": "Reloading LLM...", "model_badge_pulse": True})
