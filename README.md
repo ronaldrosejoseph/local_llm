@@ -65,10 +65,12 @@ This application transforms your machine into a fully private AI workstation:
 >     - Click the **New token** button.
 >     - Configure the token details:
 >       - **Token name**: Give it a memorable name (e.g., Local-LLM-App).
->       - **Token type**: Set this to **Read** (a Read token is all that is required to download gated models).
+>       - **Token type**: Choose either:
+>         - **Read** — a standard Read token has access to all public gated repos you've accepted terms for. This is the simplest option.
+>         - **Fine-grained** — if using a fine-grained token, you must manually enable the permission **Read access to contents of all public gated repos you can access** under Repository permissions after creating the token.
 >     - Click **Generate**.
 >     - Click the **Copy** icon next to your newly created token (it will start with `hf_...`).
-> 3. Add your token in the app: open **Settings → 🔑 HuggingFace Token**, paste your token (`hf_...`), and click **Save**. The token is verified and stored securely in your **macOS Keychain** (never in plaintext). Using `/imagine` or `/edit` without a token shows a reminder.
+> 3. Add your token in the app: open **Settings → 🔑 HuggingFace Token**, paste your token (`hf_...`), and click **Save**. The token is verified and stored securely in your **macOS Keychain** (never in plaintext). Using `/imagine` or `/edit` without a token triggers an error toast.
 
 - **Vision Models (`mlx_vlm`)**: 
   - Hook into multimodal functionality natively! Pass photos seamlessly into Vision LLMs locally (e.g., `Gemma-4`).
@@ -132,7 +134,7 @@ chmod +x start.sh stop.sh restart.sh
 > [!IMPORTANT]
 > **First Boot**: The initial run will take **several minutes** to download the Python environment and baseline models.
 
-*(Note: The very first time you execute an image generation command, the `mflux` library will forcibly intercept your command to download the FLUX.1 baseline models locally, which consumes roughly **~58GB** of space inside `~/.cache/`. Do not interrupt this process.)*
+*(Note: The very first time you execute an image generation command, the `mflux` library will forcibly intercept your command to download the FLUX.1 baseline models locally, which consumes roughly **~31GB** of space inside `~/.cache/`. Do not interrupt this process.)*
 
 ### 4. Server Management
 
