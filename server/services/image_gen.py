@@ -17,7 +17,7 @@ import uuid
 from contextlib import closing
 
 from server import state
-from server.config import load_config
+from server.config import load_config, get_static_dir
 from server.db import get_db_connection
 
 
@@ -55,7 +55,8 @@ def run_flux_pipeline(prompt: str, chat_id: str, q: queue.Queue, img_name: str,
         if state.model_manager:
             state.model_manager.sync_unload_model()
 
-        os.makedirs("static/images", exist_ok=True)
+        images_dir = os.path.join(get_static_dir(), "images")
+        os.makedirs(images_dir, exist_ok=True)
 
         class ProgressCB(InLoopCallback):
             def call_in_loop(self, t, seed, prompt, latents, config, time_steps, **kwargs):
@@ -123,7 +124,7 @@ def run_flux_pipeline(prompt: str, chat_id: str, q: queue.Queue, img_name: str,
 
         image = flux.generate_image(**gen_kwargs)
 
-        img_path = f"static/images/{img_name}"
+        img_path = os.path.join(images_dir, img_name)
         image.save(path=img_path)
 
         del flux

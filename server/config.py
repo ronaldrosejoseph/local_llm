@@ -7,6 +7,16 @@ import json
 
 _DATA_DIR = os.environ.get("LOCAL_LLM_DATA_DIR", ".")
 CONFIG_PATH = os.path.join(_DATA_DIR, "config.json")
+
+
+def get_data_dir():
+    """Return the writable data directory, respecting LOCAL_LLM_DATA_DIR."""
+    return os.environ.get("LOCAL_LLM_DATA_DIR", ".")
+
+
+def get_static_dir():
+    """Return the base directory for user-generated static files (images, uploads)."""
+    return os.path.join(get_data_dir(), "static")
 DEFAULT_CONFIG = {
     "max_tokens": 8192,
     "temperature": 0.3,

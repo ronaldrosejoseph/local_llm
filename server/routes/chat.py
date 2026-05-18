@@ -18,7 +18,7 @@ from typing import Optional
 
 from server import state
 from server.db import get_db_connection
-from server.config import load_config
+from server.config import load_config, get_static_dir
 from server.models import ChatCreate, SystemPromptUpdate
 from server.services.rag import get_embedder, build_rag_context, handle_vision_pdf_pagination, load_documents_from_db
 from server.services.web_search import perform_web_search
@@ -378,7 +378,7 @@ def delete_chat(chat_id: str):
     files_to_delete = []
     
     # Check for the chat-specific PDF (scanned PDF processing)
-    pdf_path = f"static/uploads/{chat_id}.pdf"
+    pdf_path = os.path.join(get_static_dir(), "uploads", f"{chat_id}.pdf")
     if os.path.exists(pdf_path):
         files_to_delete.append(pdf_path)
 
@@ -401,7 +401,7 @@ def delete_chat(chat_id: str):
             # Look for markdown image patterns: ![/images/filename.png] or (/images/filename.png)
             matches = re.findall(r'\(/(images|uploads)/([^)]+)\)', content)
             for folder, filename in matches:
-                files_to_delete.append(os.path.join("static", folder, filename))
+                files_to_delete.append(os.path.join(get_static_dir(), folder, filename))
 
     # 2. Delete the chat record (Cascades to documents and messages tables)
     with closing(get_db_connection()) as conn:

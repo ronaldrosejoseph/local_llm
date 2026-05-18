@@ -12,7 +12,7 @@ from contextlib import closing
 
 from server import state
 from server.db import get_db_connection
-from server.config import load_config
+from server.config import load_config, get_static_dir
 from server.services.rag import get_embedder, pdf_to_images, CODE_EXTENSIONS, save_documents_to_db
 
 router = APIRouter()
@@ -35,8 +35,9 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
 
         # 1. Handle Vision Image Uploads
         if safe_name.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-            os.makedirs("static/uploads", exist_ok=True)
-            img_path = f"static/uploads/tmp_{uuid.uuid4().hex[:8]}_{safe_name}"
+            uploads_dir = os.path.join(get_static_dir(), "uploads")
+            os.makedirs(uploads_dir, exist_ok=True)
+            img_path = os.path.join(uploads_dir, f"tmp_{uuid.uuid4().hex[:8]}_{safe_name}")
             with open(img_path, "wb") as f:
                 f.write(content)
 
@@ -88,8 +89,9 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
                     print("No digital text found (scanned): converting PDF to images via fitz...")
 
                     # Save PDF for on-demand extraction of further pages
-                    os.makedirs("static/uploads", exist_ok=True)
-                    pdf_path = f"static/uploads/{chat_id}.pdf"
+                    uploads_dir = os.path.join(get_static_dir(), "uploads")
+                    os.makedirs(uploads_dir, exist_ok=True)
+                    pdf_path = os.path.join(uploads_dir, f"{chat_id}.pdf")
                     with open(pdf_path, "wb") as f:
                         f.write(content)
 

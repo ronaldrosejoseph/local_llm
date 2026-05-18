@@ -101,7 +101,16 @@ async def shutdown():
             pass
 
 
-# Serve static files
+# Mount user-generated content directories from the writable data dir.
+# These must be mounted BEFORE the root static mount so they take priority.
+from server.config import get_static_dir
+_user_static = get_static_dir()
+os.makedirs(os.path.join(_user_static, "images"), exist_ok=True)
+os.makedirs(os.path.join(_user_static, "uploads"), exist_ok=True)
+app.mount("/images", StaticFiles(directory=os.path.join(_user_static, "images")), name="user_images")
+app.mount("/uploads", StaticFiles(directory=os.path.join(_user_static, "uploads")), name="user_uploads")
+
+# Serve frontend static assets (HTML/JS/CSS) from the project directory
 if not os.path.exists("static"):
     os.makedirs("static")
 app.mount("/", StaticFiles(directory="static", html=True), name="static")

@@ -13,7 +13,7 @@ import json
 import numpy as np
 
 from server import state
-from server.config import load_config
+from server.config import load_config, get_static_dir
 from server.db import get_db_connection
 from contextlib import closing
 
@@ -81,7 +81,8 @@ def pdf_to_images(pdf_content: bytes, chat_id: str, start_page: int = 0, limit: 
     """Converts PDF pages to images for Vision model consumption."""
     import fitz  # PyMuPDF
 
-    os.makedirs("static/uploads", exist_ok=True)
+    uploads_dir = os.path.join(get_static_dir(), "uploads")
+    os.makedirs(uploads_dir, exist_ok=True)
     doc = fitz.open(stream=pdf_content, filetype="pdf")
     image_paths = []
 
@@ -90,7 +91,7 @@ def pdf_to_images(pdf_content: bytes, chat_id: str, start_page: int = 0, limit: 
         page = doc.load_page(i)
         pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))  # 2x zoom for clarity
         img_name = f"pdf_{chat_id[:8]}_{i}_{uuid.uuid4().hex[:6]}.png"
-        img_path = f"static/uploads/{img_name}"
+        img_path = os.path.join(uploads_dir, img_name)
         pix.save(img_path)
         image_paths.append(img_path)
 
