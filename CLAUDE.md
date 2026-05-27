@@ -53,7 +53,7 @@ server/services/       → Business logic
     web_search.py      → DuckDuckGo scraping
 ```
 
-**Frontend** uses ES modules (`type="module"`). `static/js/app.js` is the entry point — it imports all other modules and wires event listeners. `static/js/state.js` exports a shared `state` object and `elements` map that all modules import and mutate directly.
+**Frontend** uses ES modules (`type="module"`). `static/js/app.js` is the entry point — it imports all other modules, wires event listeners, and exposes `window.editMessage`, `window.regenerateMessage`, `window.showToast`, `window.copyToClipboard`, `window.copyCode`, `window.stopSpeaking` for inline `onclick` handlers. `static/js/state.js` exports a shared `state` object and `elements` map that all modules import and mutate directly.
 
 ## Key Patterns
 
@@ -66,7 +66,7 @@ server/services/       → Business logic
 - VLM-first loading: worker attempts `mlx_vlm.load()`, falls back to `mlx_lm.load()`
 - Only one child process at a time; switching models reuses the same process
 - `state.model_manager.is_vlm` controls which generation path is used
-- The `generation_lock` (threading.Lock) serializes all access to the child process
+- The `generation_lock` (threading.Lock) serializes all access to the child process. Lock acquisition result is tracked (`lock_acquired`) and `release()` is only called when the lock was actually acquired — prevents RuntimeError on early-exit paths
 
 ### Streaming (SSE)
 - All generation uses Server-Sent Events with `data: {json}\n\n` lines, terminated by `data: [DONE]\n\n`
@@ -98,6 +98,26 @@ server/services/       → Business logic
 - `/imagine <prompt>` — FLUX.1 Schnell image generation (unloads LLM from VRAM first)
 - `/edit <prompt>` — Image-to-image editing with FLUX using last uploaded image
 - `/next` — Advances RAG pagination window
+
+### Message Edit & Regenerate
+- User messages have an edit button (pencil icon), assistant messages have a regenerate button (refresh icon)
+- **Edit flow**: `editMessage()` replaces the user message content with a textarea → Cancel/Escape reverts → Save & Submit calls `POST /api/chats/{chat_id}/messages/truncate` with `from_index` → removes DOM elements from that index onward → calls `sendMessage(newContent, forceTitleRegen=true)`
+- **Regenerate flow**: `regenerateMessage()` walks backward from the assistant message to find the preceding user message → same truncate + re-send flow with the original user content
+- **Truncate endpoint** (`routes/chat.py`): deletes messages from the cutoff index onward, resets `summary_through_msg_id` watermark, and cleans up orphaned image/upload files by regex-scanning truncated message content for `(/(images|uploads)/(…))` paths
+- `sendMessage(text, forceTitleRegen)` — `forceTitleRegen=true` triggers title refinement regardless of turn count, used after edits/regenerations where the conversation context changed
+- ArrowUp with empty input focuses the last user message edit button
+
+### Keyboard shortcuts (initialized in `app.js::initKeyboardShortcuts()`)
+- `Ctrl/Cmd+Shift+N` — New chat
+- `Ctrl/Cmd+/` — Focus input
+- `Escape` — Stop generation (if running)
+- `ArrowUp` (with empty input) — Edit last user message
+
+### Drag & Drop file upload
+- Files can be dragged onto the chat window to upload as RAG documents
+- Semi-transparent overlay (`#drop-overlay`) with dashed accent border, fade animation, and centered icon/text
+- Implemented in `app.js::initDragAndDrop()` — uses a drag counter to correctly track nested enter/leave events
+- On drop, files are piped to the existing `elements.fileUpload` input and trigger the `change` handler
 
 ### RAG
 - Documents chunked on upload (800 chars text, full file for code), embeddings via `all-MiniLM-L6-v2`

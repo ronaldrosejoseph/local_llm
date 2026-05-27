@@ -8,9 +8,23 @@ import { loadChatHistory } from './sidebar.js';
 import { speakResponse, stopSpeaking } from './speech.js';
 import { showToast } from './toast.js';
 
+// --- Action button HTML generators (shared between appendMessage and streaming) ---
+
+function _userActionButtons() {
+    return `<button onclick="editMessage(this)" title="Edit message" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="pencil" style="width: 14px; height: 14px;"></i></button>`;
+}
+
+function _assistantActionButtons() {
+    return `
+        <button onclick="speakResponse(this.closest('.message-actions').previousElementSibling.textContent)" title="Read out loud" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="volume-2" style="width: 14px; height: 14px;"></i></button>
+        <button onclick="stopSpeaking()" title="Stop speaking" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="square" style="width: 14px; height: 14px;"></i></button>
+        <button onclick="copyToClipboard(this.closest('.message-actions').previousElementSibling.textContent, this)" title="Copy to clipboard" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="copy" style="width: 14px; height: 14px;"></i></button>
+        <button onclick="regenerateMessage(this)" title="Regenerate response" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="refresh-cw" style="width: 14px; height: 14px;"></i></button>`;
+}
+
 // --- Send Message ---
 
-export async function sendMessage(text = null) {
+export async function sendMessage(text = null, forceTitleRegen = false) {
     const content = text || elements.chatInput.value.trim();
     if (!content) return;
 
@@ -203,10 +217,7 @@ export async function sendMessage(text = null) {
                                 actionsDiv = document.createElement('div');
                                 actionsDiv.className = 'message-actions';
                                 actionsDiv.style.cssText = 'margin-top: 5px; opacity: 0.5; display: flex; gap: 10px; align-items: center;';
-                                actionsDiv.innerHTML = `
-                                    <button onclick="speakResponse(this.parentElement.previousElementSibling.textContent)" title="Read out loud" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="volume-2" style="width: 14px; height: 14px;"></i></button>
-                                    <button onclick="stopSpeaking()" title="Stop speaking" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="square" style="width: 14px; height: 14px;"></i></button>
-                                    <button onclick="copyToClipboard(this.parentElement.previousElementSibling.textContent, this)" title="Copy to clipboard" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="copy" style="width: 14px; height: 14px;"></i></button>`;
+                                actionsDiv.innerHTML = _assistantActionButtons();
                                 assistantMessageDiv.appendChild(actionsDiv);
                                 elements.messagesContainer.appendChild(assistantMessageDiv);
                                 lucide.createIcons({ elements: Array.from(assistantMessageDiv.querySelectorAll('[data-lucide]')) });
@@ -287,11 +298,7 @@ export async function sendMessage(text = null) {
                                     // Skip speak/copy buttons for image generation results
                                     const isImageGen = fullContent.trim().startsWith('![');
                                     if (!isImageGen) {
-                                        actionsDiv.innerHTML = `
-                                            <button onclick="speakResponse(this.parentElement.previousElementSibling.textContent)" title="Read out loud" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="volume-2" style="width: 14px; height: 14px;"></i></button>
-                                            <button onclick="stopSpeaking()" title="Stop speaking" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="square" style="width: 14px; height: 14px;"></i></button>
-                                            <button onclick="copyToClipboard(this.parentElement.previousElementSibling.textContent, this)" title="Copy to clipboard" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="copy" style="width: 14px; height: 14px;"></i></button>
-                                        `;
+                                        actionsDiv.innerHTML = _assistantActionButtons();
                                     }
                                     assistantMessageDiv.appendChild(actionsDiv);
                                     elements.messagesContainer.appendChild(assistantMessageDiv);
@@ -393,7 +400,7 @@ export async function sendMessage(text = null) {
         // Auto-generate/Refine title (First turn + every 3 turns)
         const userMsgCount = elements.messagesContainer.querySelectorAll('.message.user').length;
         const isFirstTurn = isNewChat || elements.currentChatTitle.textContent === "New Conversation";
-        const shouldRefine = isFirstTurn || (userMsgCount > 1 && userMsgCount % 3 === 0);
+        const shouldRefine = isFirstTurn || forceTitleRegen || (userMsgCount > 1 && userMsgCount % 3 === 0);
 
         if (shouldRefine && state.currentChatId === requestChatId && fullContent.trim().length > 0) {
             fetch(`${API_URL}/api/chats/${requestChatId}/generate-title`, { method: 'POST' })
@@ -468,14 +475,14 @@ export function appendMessage(role, content, stats = null) {
         ${thinkingHtml}
         <div class="message-content">${renderMarkdown(displayContent)}</div>
         <div class="message-actions" style="margin-top: 5px; opacity: 0.5; display: flex; gap: 10px; align-items: center;">
-            ${role === 'assistant' ? `
-                <button onclick="speakResponse(this.parentElement.previousElementSibling.textContent)" title="Read out loud" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="volume-2" style="width: 14px; height: 14px;"></i></button>
-                <button onclick="stopSpeaking()" title="Stop speaking" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="square" style="width: 14px; height: 14px;"></i></button>
-                <button onclick="copyToClipboard(this.parentElement.previousElementSibling.textContent, this)" title="Copy to clipboard" style="background:none; border:none; color:inherit; cursor:pointer; font-size: 12px; display: flex; align-items: center;"><i data-lucide="copy" style="width: 14px; height: 14px;"></i></button>
-            ` : ''}
+            ${role === 'assistant' ? _assistantActionButtons() : _userActionButtons()}
             ${statsHtml}
         </div>
     `;
+    // Store raw content as data attribute for edit mode
+    if (role === 'user') {
+        div.dataset.rawContent = content;
+    }
     elements.messagesContainer.appendChild(div);
     const contentContainer = div.querySelector('.message-content');
     highlightCode(contentContainer);
@@ -546,4 +553,153 @@ export function updateRagStatusUI(rs) {
             container.style.display = 'none';
         }
     }
+}
+
+
+// --- Message Edit ---
+
+export function editMessage(buttonEl) {
+    const messageDiv = buttonEl.closest('.message');
+    if (!messageDiv || !messageDiv.classList.contains('user')) return;
+
+    const contentDiv = messageDiv.querySelector('.message-content');
+    const actionsDiv = messageDiv.querySelector('.message-actions');
+    if (!contentDiv) return;
+
+    // Get raw text content (stored in data attribute or fallback to textContent)
+    const rawContent = messageDiv.dataset.rawContent || contentDiv.textContent.trim();
+
+    // Replace content with edit textarea
+    const editContainer = document.createElement('div');
+    editContainer.className = 'message-edit-container';
+
+    const textarea = document.createElement('textarea');
+    textarea.className = 'message-edit-textarea';
+    textarea.value = rawContent;
+
+    const editActions = document.createElement('div');
+    editActions.className = 'message-edit-actions';
+    editActions.innerHTML = `
+        <button class="edit-cancel-btn"><i data-lucide="x"></i> Cancel</button>
+        <button class="edit-save-btn"><i data-lucide="check"></i> Save & Submit</button>
+    `;
+
+    editContainer.appendChild(textarea);
+    editContainer.appendChild(editActions);
+
+    // Hide original content and actions
+    contentDiv.style.display = 'none';
+    if (actionsDiv) actionsDiv.style.display = 'none';
+    messageDiv.insertBefore(editContainer, contentDiv);
+
+    // Auto-resize textarea to fit content
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(textarea.scrollHeight, 300) + 'px';
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+
+    lucide.createIcons({ elements: Array.from(editActions.querySelectorAll('[data-lucide]')) });
+
+    // Cancel handler
+    editActions.querySelector('.edit-cancel-btn').addEventListener('click', () => {
+        editContainer.remove();
+        contentDiv.style.display = '';
+        if (actionsDiv) actionsDiv.style.display = '';
+    });
+
+    // Escape to cancel
+    textarea.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            editContainer.remove();
+            contentDiv.style.display = '';
+            if (actionsDiv) actionsDiv.style.display = '';
+        }
+    });
+
+    // Save & Submit handler
+    editActions.querySelector('.edit-save-btn').addEventListener('click', async () => {
+        const newContent = textarea.value.trim();
+        if (!newContent) return;
+
+        if (!state.currentChatId) return;
+
+        // Find index of this message among all message divs
+        const allMessages = Array.from(elements.messagesContainer.querySelectorAll('.message'));
+        const msgIndex = allMessages.indexOf(messageDiv);
+        if (msgIndex === -1) return;
+
+        // Truncate from this message onwards in DB
+        try {
+            const res = await fetch(`${API_URL}/api/chats/${state.currentChatId}/messages/truncate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ from_index: msgIndex }),
+            });
+            if (!res.ok) throw new Error('Truncate failed');
+        } catch (err) {
+            showToast('Failed to edit message: ' + err.message, 'error');
+            return;
+        }
+
+        // Remove this message and all after it from DOM
+        for (let i = allMessages.length - 1; i >= msgIndex; i--) {
+            allMessages[i].remove();
+        }
+
+        // Send the edited content as a new message
+        sendMessage(newContent, true);
+    });
+}
+
+
+// --- Regenerate Response ---
+
+export async function regenerateMessage(buttonEl) {
+    const assistantDiv = buttonEl.closest('.message');
+    if (!assistantDiv || !assistantDiv.classList.contains('assistant')) return;
+    if (!state.currentChatId) return;
+
+    // Find the user message that precedes this assistant message
+    const allMessages = Array.from(elements.messagesContainer.querySelectorAll('.message'));
+    const assistantIndex = allMessages.indexOf(assistantDiv);
+    if (assistantIndex < 1) return;
+
+    // Walk backwards to find the preceding user message
+    let userIndex = -1;
+    let userContent = '';
+    for (let i = assistantIndex - 1; i >= 0; i--) {
+        if (allMessages[i].classList.contains('user')) {
+            userIndex = i;
+            userContent = allMessages[i].dataset.rawContent
+                || allMessages[i].querySelector('.message-content')?.textContent?.trim()
+                || '';
+            break;
+        }
+    }
+
+    if (userIndex === -1 || !userContent) {
+        showToast('Could not find the user message to regenerate from.', 'warning');
+        return;
+    }
+
+    // Truncate from the user message onwards in DB
+    try {
+        const res = await fetch(`${API_URL}/api/chats/${state.currentChatId}/messages/truncate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ from_index: userIndex }),
+        });
+        if (!res.ok) throw new Error('Truncate failed');
+    } catch (err) {
+        showToast('Failed to regenerate: ' + err.message, 'error');
+        return;
+    }
+
+    // Remove messages from DOM (user message + everything after)
+    for (let i = allMessages.length - 1; i >= userIndex; i--) {
+        allMessages[i].remove();
+    }
+
+    // Re-send the same user content
+    sendMessage(userContent, true);
 }

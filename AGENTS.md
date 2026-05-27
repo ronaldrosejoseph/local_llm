@@ -81,10 +81,10 @@
 |------|---------|
 | `static/index.html` | Single-page HTML shell. |
 | `static/style.css` | Complete styling. Dark theme, responsive, glassmorphism. ~1300 lines. |
-| `static/js/app.js` | **Entry point** — imports all modules, DOMContentLoaded init, event wiring, window globals. |
-| `static/js/state.js` | Shared state object + DOM element references. |
+| `static/js/app.js` | **Entry point** — imports all modules, DOMContentLoaded init, event wiring, window globals, keyboard shortcut handler (`initKeyboardShortcuts`), drag-and-drop upload overlay (`initDragAndDrop`). |
+| `static/js/state.js` | Shared state object + DOM element references (includes `dropOverlay` for drag-and-drop). |
 | `static/js/utils.js` | Markdown rendering (Marked + DOMPurify), clipboard, scroll management. |
-| `static/js/chat.js` | sendMessage with SSE parsing, appendMessage, typing indicator. |
+| `static/js/chat.js` | sendMessage with SSE parsing, appendMessage, typing indicator, message editing (`editMessage`), response regeneration (`regenerateMessage`). |
 | `static/js/sidebar.js` | Chat history, navigation, new/delete chat, modals, sidebar toggle. |
 | `static/js/models.js` | Model loading, adding (SSE download), switching (SSE load). |
 | `static/js/settings.js` | Settings modal, config sliders, model library UI. |
@@ -117,6 +117,7 @@
 |--------|-------|---------|
 | `GET` | `/api/chats?q=` | List all chats (id, title, updated_at). Optional `q` parameter searches by title. |
 | `GET` | `/api/chats/{chat_id}/messages` | Get messages for a chat |
+| `POST` | `/api/chats/{chat_id}/messages/truncate` | Truncate conversation from a specific index (deletes DB messages + summary sync + file asset cleanup) |
 | `POST` | `/api/chat?chat_id=` | Send message (includes `system_prompt` for new chats), returns SSE tokens |
 | `GET` | `/api/chats/{chat_id}/system-prompt` | Get the system prompt for a chat |
 | `PUT` | `/api/chats/{chat_id}/system-prompt` | Update the system prompt for a chat |
@@ -167,6 +168,26 @@
 - The SSE protocol uses `data: {json}\n\n` lines with a final `data: [DONE]\n\n`.
 - The frontend parses SSE chunks and renders markdown incrementally with throttled re-renders (~20fps).
 - **Thinking models**: Worker buffers tokens until the end tag is found, then emits `thinking_start` → `thinking` raw tokens → `thinking_done` before regular `content` tokens. Frontend renders a collapsible "Thought" section with brain icon and pulse animation. Thinking content is stored separately from the clean response in the `messages` table.
+
+### Message Edit & Regenerate
+- **Edit button** (pencil icon): visible on every user message when hovering. Clicking replaces the message with a styled textarea (accent border, auto-resize to 300px max, Escape to cancel).
+  - On "Save & Submit": calls `POST /api/chats/{chat_id}/messages/truncate` with the message's index, removes that message and everything after from the DOM, then calls `sendMessage(newContent, forceTitleRegen=true)`.
+- **Regenerate button** (refresh icon): visible on every assistant message when hovering. Walks backward to find the preceding user message, truncates from that point, and re-sends the original user content.
+  - `sendMessage(content, forceTitleRegen=true)` forces title refinement even if it's not the 3rd turn.
+- **Truncate endpoint** (server/routes/chat.py:428): Deletes DB messages from index onward, resets `summary_through_msg_id` watermark, and cleans up orphaned image/upload files on disk by regex-scanning truncated message content.
+- **Keyboard shortcut**: ArrowUp with empty input autofocuses the last user message's edit button.
+
+### Keyboard Shortcuts
+Enabled via `app.js::initKeyboardShortcuts()`:
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl/Cmd+Shift+N` | New chat |
+| `Ctrl/Cmd+/` | Focus input |
+| `Escape` | Abort in-flight generation |
+| `ArrowUp` (empty input) | Edit last user message |
+
+### Drag & Drop File Upload
+Enabled via `app.js::initDragAndDrop()`. Files dragged over the chat window show a full-screen overlay (darkened background, blur, dashed accent border with file-up icon). On drop, files are forwarded to the existing file upload input, triggering the normal upload flow. Uses a drag counter to handle nested enter/leave events correctly.
 
 ### Special Commands (Prefix-Based Routing)
 - `/web <query>` — Scrapes DuckDuckGo and injects results as context before the LLM prompt.
@@ -299,7 +320,7 @@ system_prompt_templates (id INTEGER PK AUTOINCREMENT, name TEXT, content TEXT,
 The frontend uses ES modules (`type="module"` in the script tag). Key patterns:
 - **state.js** exports a shared `state` object and `elements` map — modules import and mutate these directly.
 - **app.js** is the entry point that imports all modules and wires event listeners.
-- Functions needed by inline `onclick` handlers are attached to `window.*` in app.js.
+- Functions needed by inline `onclick` handlers are attached to `window.*` in app.js: `sendMessage`, `stopGeneration`, `stopSpeaking`, `showToast`, `copyToClipboard`, `copyCode`, `editMessage`, `regenerateMessage`.
 
 ### State
 - `state.currentChatId` — Active chat UUID (null = no chat selected).

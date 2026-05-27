@@ -7,7 +7,7 @@
 
 import { state, elements, API_URL } from './state.js';
 import { initMarked, initScrollTracking, copyCode, copyToClipboard } from './utils.js';
-import { sendMessage, stopGeneration, updateRagStatusUI } from './chat.js';
+import { sendMessage, stopGeneration, updateRagStatusUI, editMessage, regenerateMessage } from './chat.js';
 import { loadChatHistory, startNewChat, hideDeleteModal, toggleSidebar, closeSidebar } from './sidebar.js';
 import { loadModels, addNewModel, switchModel } from './models.js';
 import { openSettings, closeSettings, loadConfig, initConfigSliders, resetSettings, initHfTokenUI, initHfCacheUI } from './settings.js';
@@ -22,6 +22,8 @@ window.stopSpeaking = stopSpeaking;
 window.copyToClipboard = copyToClipboard;
 window.copyCode = copyCode;
 window.showToast = showToast;
+window.editMessage = editMessage;
+window.regenerateMessage = regenerateMessage;
 
 // --- Initialize ---
 
@@ -204,3 +206,87 @@ initSpeechRecognition();
 initSystemPromptSearch();
 initHfTokenUI();
 initHfCacheUI();
+
+// --- Keyboard Shortcuts ---
+function initKeyboardShortcuts() {
+    window.addEventListener('keydown', (e) => {
+        // Ctrl+Shift+N or Cmd+Shift+N: New Chat
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'n') {
+            e.preventDefault();
+            startNewChat();
+            return;
+        }
+
+        // Ctrl+/ or Cmd+/: Focus Input
+        if ((e.ctrlKey || e.metaKey) && e.key === '/') {
+            e.preventDefault();
+            elements.chatInput.focus();
+            return;
+        }
+
+        // Escape: Stop generation if running
+        if (e.key === 'Escape') {
+            if (elements.stopBtn && elements.stopBtn.style.display !== 'none') {
+                e.preventDefault();
+                stopGeneration();
+            }
+            return;
+        }
+
+        // ArrowUp: Edit last user message if input is focused and empty
+        if (e.key === 'ArrowUp' && document.activeElement === elements.chatInput && !elements.chatInput.value) {
+            e.preventDefault();
+            const userMessages = Array.from(elements.messagesContainer.querySelectorAll('.message.user'));
+            if (userMessages.length > 0) {
+                const lastUserMessage = userMessages[userMessages.length - 1];
+                const editBtn = lastUserMessage.querySelector('.msg-action-btn[title*="Edit"]');
+                if (editBtn) {
+                    editBtn.click();
+                }
+            }
+        }
+    });
+}
+
+// --- Drag & Drop Upload ---
+function initDragAndDrop() {
+    if (!elements.dropOverlay) return;
+
+    let dragCounter = 0;
+
+    window.addEventListener('dragenter', (e) => {
+        e.preventDefault();
+        dragCounter++;
+        if (dragCounter === 1) {
+            elements.dropOverlay.classList.add('active');
+        }
+    });
+
+    window.addEventListener('dragover', (e) => {
+        e.preventDefault();
+    });
+
+    window.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        dragCounter--;
+        if (dragCounter === 0) {
+            elements.dropOverlay.classList.remove('active');
+        }
+    });
+
+    window.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dragCounter = 0;
+        elements.dropOverlay.classList.remove('active');
+
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            elements.fileUpload.files = e.dataTransfer.files;
+            elements.fileUpload.dispatchEvent(new Event('change'));
+        }
+    });
+}
+
+// Initialize new additions
+initKeyboardShortcuts();
+initDragAndDrop();
+

@@ -1980,16 +1980,44 @@ pre[class*="language-"] {
 }
 
 /* --- Message Action Button Effects --- */
+.message-actions {
+    margin-top: 8px !important;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    opacity: 0.35 !important;
+    transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.message:hover .message-actions {
+    opacity: 0.9 !important;
+}
+
 .message-actions button {
-    transition: color 0.15s, background 0.15s, transform 0.1s;
+    background: none !important;
+    border: 1px solid transparent !important;
+    color: var(--text-muted) !important;
+    cursor: pointer;
+    padding: 6px !important;
+    border-radius: 6px !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    transform: translateY(0);
 }
 
 .message-actions button:hover {
-    color: var(--text-color);
+    background: rgba(85, 170, 255, 0.08) !important;
+    border-color: rgba(85, 170, 255, 0.2) !important;
+    color: var(--accent-color) !important;
+    transform: translateY(-1.5px) !important;
+    box-shadow: 0 4px 10px rgba(85, 170, 255, 0.1) !important;
 }
 
 .message-actions button:active {
-    transform: scale(0.85);
+    transform: translateY(0) scale(0.92) !important;
+    background: rgba(85, 170, 255, 0.15) !important;
 }
 
 /* --- Thinking Indicator (typing) --- */
@@ -2114,4 +2142,129 @@ pre[class*="language-"] {
 @keyframes think-pulse {
     0%, 100% { opacity: 0.5; transform: scale(1); }
     50% { opacity: 1; transform: scale(1.2); }
+}
+
+/* --- Message Edit Mode --- */
+.message-edit-container {
+    width: 100%;
+}
+
+.message-edit-textarea {
+    width: 100%;
+    min-height: 60px;
+    max-height: 300px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--accent-color);
+    border-radius: 10px;
+    color: var(--text-color);
+    padding: 12px 14px;
+    font-family: var(--font-family);
+    font-size: 15px;
+    line-height: 1.5;
+    resize: vertical;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(85, 170, 255, 0.15);
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.message-edit-textarea:focus {
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px rgba(85, 170, 255, 0.2);
+}
+
+.message-edit-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+    justify-content: flex-end;
+}
+
+.message-edit-actions button {
+    padding: 6px 16px;
+    border-radius: 8px;
+    border: none;
+    font-family: var(--font-family);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.message-edit-actions button i {
+    width: 13px;
+    height: 13px;
+}
+
+.edit-cancel-btn {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-muted);
+}
+
+.edit-cancel-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-color);
+}
+
+.edit-save-btn {
+    background: var(--accent-color);
+    color: #000;
+}
+
+.edit-save-btn:hover {
+    box-shadow: 0 2px 10px rgba(85, 170, 255, 0.3);
+    transform: translateY(-1px);
+}
+
+/* User message action buttons (edit) */
+.user .message-actions {
+    justify-content: flex-end;
+}
+
+/* --- Drag and Drop Overlay --- */
+.drop-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 500;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(17, 17, 17, 0.85);
+    backdrop-filter: blur(8px);
+    pointer-events: none;
+}
+
+.drop-overlay.active {
+    display: flex;
+}
+
+.drop-overlay-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 50px 70px;
+    border: 2px dashed var(--accent-color);
+    border-radius: 20px;
+    background: rgba(85, 170, 255, 0.04);
+    animation: drop-pulse 2s ease-in-out infinite;
+}
+
+.drop-overlay-content i {
+    width: 48px;
+    height: 48px;
+    color: var(--accent-color);
+}
+
+.drop-overlay-content span {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--accent-color);
+}
+
+@keyframes drop-pulse {
+    0%, 100% { border-color: var(--accent-color); }
+    50% { border-color: rgba(85, 170, 255, 0.3); }
 }

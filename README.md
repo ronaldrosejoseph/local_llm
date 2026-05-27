@@ -30,6 +30,7 @@ This application transforms your machine into a fully private AI workstation:
 - **Local & Private**: All inference, embedding, and chat history stay 100% locally on your machine.
 - **Persistent Memory**: Chat histories are saved securely to a SQLite database and can be resumed at any time.
 - **Dynamic Chat Titles**: Titles auto-refine after the first turn and every 3 turns. Uses a hybrid strategy: main model first (non-thinking) with title_worker fallback (1B Llama). Programmatic titles (`Doc: filename`, `Image: filename`, `Generated: prompt`) skip the LLM entirely for attachments and image commands.
+- **Message Editing & Regeneration**: Hover over any message to reveal action buttons — edit user messages (pencil icon) or regenerate assistant responses (refresh icon). Edit opens an inline textarea with Save & Submit / Cancel; regenerate re-sends the original prompt for a new response. Both flows intelligently truncate the conversation from the edited/regenerated point and trigger a title refresh.
 - **Reusable System Prompts**: 24 built-in persona templates (Professors, Financial Analysts, Chefs, etc.) that can be searched, loaded, modified, and saved. Create your own templates and reuse them across chats.
 - **Generation Stats**: Token count and tokens-per-second are displayed after every assistant response and persist across sessions.
 
@@ -38,7 +39,7 @@ This application transforms your machine into a fully private AI workstation:
   - Start any message with `/web` (e.g., `/web What's the latest tech news?`). 
   - The backend intercepts the prompt, scrapes real-time DuckDuckGo results completely free of API bounds, and invisibly feeds them to your LLM for pinpoint accuracy.
 - **Document Chat & RAG (Retrieval-Augmented Generation)**: 
-  - Click the **Paperclip Icon** to upload `.txt` or `.pdf` files. 
+  - Click the **Paperclip Icon** to upload `.txt` or `.pdf` files, or **drag and drop** files directly onto the chat window.
   - An ultra-fast local pipeline chunks and indexes your documents. Subsequent messages inject the document in sequential page order, allowing you to browse through large PDFs naturally using the context slider.
 - **📚 Large Document Navigation & Dual-Mode RAG**:
   - For documents longer than 50 chunks, the system uses a **sliding window** to prevent the model from becoming overwhelmed.
@@ -78,6 +79,14 @@ This application transforms your machine into a fully private AI workstation:
 ### 🎙️ Audio Interaction
 - **Speech-to-Text**: Click the mic icon to dictate physical voice sequences to the LLM.
 - **Text-to-Speech**: AI responses can be spoken aloud intelligently using the integrated macOS `say` command daemon. To download premium voices on macOS, open System Settings search for System Voice and click on it. Goto the System Voice dropdown menu to select Manage Voices..., click the download cloud icon next to your preferred "Premium" voice eg: Siri (Voice 4), and then re-select it from the main dropdown menu to set it as your default.
+
+### ⌨️ Keyboard Shortcuts
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl/Cmd+Shift+N` | Start a new chat |
+| `Ctrl/Cmd+/` | Focus the message input |
+| `Escape` | Stop an in-progress generation |
+| `ArrowUp` (with empty input) | Edit your last message |
 
 ### 📐 Professional Math Rendering
 - **KaTeX Support**: Integrated professional LaTeX mathematical typesetting. The system automatically detects and renders complex inline and block-level math formulas (e.g., `$E=mc^2$`) with high-fidelity, offline-first KaTeX libraries.

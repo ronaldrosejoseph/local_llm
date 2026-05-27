@@ -426,6 +426,65 @@ def delete_chat(chat_id: str):
     return {"status": "ok"}
 
 
+@router.post("/api/chats/{chat_id}/messages/truncate")
+def truncate_messages(chat_id: str, payload: dict):
+    """Delete messages from a given index onwards.
+
+    Used by message edit and regeneration flows:
+    - Edit: truncate from the edited message index, then re-send with new content.
+    - Regenerate: truncate from the last user message index, then re-send same content.
+    """
+    from_index = payload.get("from_index", -1)
+    if from_index < 0:
+        return {"error": "from_index is required and must be >= 0"}
+
+    with closing(get_db_connection()) as conn:
+        # Get all message IDs in chronological order
+        messages = conn.execute(
+            "SELECT id FROM messages WHERE chat_id = ? ORDER BY timestamp ASC",
+            (chat_id,),
+        ).fetchall()
+
+        if from_index >= len(messages):
+            return {"error": "from_index out of range"}
+
+        cutoff_id = messages[from_index]["id"]
+
+        # Gather image assets in truncated messages for cleanup
+        truncated_msgs = conn.execute(
+            "SELECT content FROM messages WHERE chat_id = ? AND id >= ?",
+            (chat_id, cutoff_id),
+        ).fetchall()
+        files_to_delete = []
+        for row in truncated_msgs:
+            matches = re.findall(r'\(/(images|uploads)/([^)]+)\)', row["content"])
+            for folder, filename in matches:
+                files_to_delete.append(os.path.join(get_static_dir(), folder, filename))
+
+        # Delete messages from cutoff onwards
+        conn.execute(
+            "DELETE FROM messages WHERE chat_id = ? AND id >= ?",
+            (chat_id, cutoff_id),
+        )
+
+        # Reset summary watermark if it pointed beyond the truncation point
+        conn.execute(
+            "UPDATE chats SET summary_through_msg_id = MIN(COALESCE(summary_through_msg_id, 0), ?) WHERE id = ?",
+            (cutoff_id - 1, chat_id),
+        )
+        conn.commit()
+
+    # Clean up physical image files
+    for path in set(files_to_delete):
+        if os.path.exists(path):
+            try:
+                os.remove(path)
+            except Exception:
+                pass
+
+    return {"status": "ok", "deleted_from_index": from_index}
+
+
 # --- System Prompt Endpoints ---
 
 @router.get("/api/chats/{chat_id}/system-prompt")
@@ -616,7 +675,8 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
 
     async def event_generator():
         # --- Concurrency: acquire generation lock ---
-        if not state.generation_lock.acquire(blocking=False):
+        lock_acquired = state.generation_lock.acquire(blocking=False)
+        if not lock_acquired:
             yield f"data: {json.dumps({'chat_id': chat_id})}\n\n"
             yield f"data: {json.dumps({'error': 'Model is currently busy with another request. Please wait and try again.'})}\n\n"
             yield "data: [DONE]\n\n"
@@ -740,8 +800,9 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
                 elapsed_s = gen_time_ms / 1000 if gen_time_ms > 0 else 0
                 yield f"data: {json.dumps({'gen_stats': {'tokens': token_count, 'time_ms': gen_time_ms, 'time_s': round(elapsed_s, 1), 'tps': round(tps, 1)}})}\n\n"
 
-            # Release concurrency lock
-            state.generation_lock.release()
+            # Release concurrency lock (only if we acquired it)
+            if lock_acquired:
+                state.generation_lock.release()
 
             # Kick off async memory tasks (embedding + summarization)
             if full_response and assistant_msg_id:

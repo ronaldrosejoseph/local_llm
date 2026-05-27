@@ -52,6 +52,7 @@ export const elements = {
     systemPromptSearch: document.getElementById('system-prompt-search'),
     systemPromptSearchResults: document.getElementById('system-prompt-search-results'),
     systemPromptTemplateSave: document.getElementById('system-prompt-template-save'),
+    dropOverlay: document.getElementById('drop-overlay'),
 };
 
 export { API_URL };
