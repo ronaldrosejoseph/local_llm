@@ -1,5 +1,7 @@
 # LLM Local Chat 🤖
 
+[![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 A premium, fast, and local LLM chat interface inspired by ChatGPT, heavily optimized for Apple Silicon using the **MLX** and **PyTorch MPS** frameworks.
 
 Run massive open-source models completely offline while leveraging premium capabilities like Live Web Search, Document Retrieval (RAG), and Image Generation—all processed securely natively on your Mac.
@@ -183,3 +185,7 @@ The application dynamically detects model environments. You can add new ones by 
 
 - **Gemma 4 2B (Default)**: `mlx-community/gemma-4-e2b-it-4bit`
 - **Gemma 4 4B**: `mlx-community/gemma-4-e4b-it-4bit`
+
+---
+
+*This software is intended for lawful purposes only. The author is not responsible for any misuse.*
