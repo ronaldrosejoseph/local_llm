@@ -5,7 +5,6 @@ System prompt template routes — search, save, update, delete reusable prompts.
 from fastapi import APIRouter, HTTPException
 from contextlib import closing
 from typing import Optional
-
 from server.db import get_db_connection
 
 router = APIRouter()

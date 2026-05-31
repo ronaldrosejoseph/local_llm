@@ -28,8 +28,6 @@ def init_db():
     )
     """)
     
-
-    
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

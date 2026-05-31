@@ -283,7 +283,7 @@ chats (id TEXT PK, title TEXT, created_at TIMESTAMP, updated_at TIMESTAMP, syste
 messages (id INTEGER PK, chat_id TEXT FK, role TEXT, content TEXT, timestamp TIMESTAMP,
          embedding BLOB, generation_time_ms INTEGER, token_count INTEGER,
          thinking_content TEXT)
-         -- Vector memory + generation stats for assistant messages
+         -- generation stats for assistant messages
          -- thinking_content: raw thinking block with tags (null for non-thinking models)
 
 -- Available models in the library

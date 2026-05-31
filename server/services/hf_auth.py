@@ -11,6 +11,7 @@ import os
 import sys
 import keyring
 import huggingface_hub
+from server.services.llm import set_offline_mode
 
 SERVICE_NAME = "local-llm-chat"
 ACCOUNT_NAME = "hf-token"
@@ -27,9 +28,7 @@ def verify_token(token: str) -> tuple[bool, str]:
     token = token.strip()
 
     # Temporarily disable offline mode for verification
-    import huggingface_hub.constants
-    original_offline = huggingface_hub.constants.HF_HUB_OFFLINE
-    huggingface_hub.constants.HF_HUB_OFFLINE = False
+    set_offline_mode(False)
     try:
         info = huggingface_hub.whoami(token=token)
         username = info.get("name", "unknown")
@@ -42,7 +41,7 @@ def verify_token(token: str) -> tuple[bool, str]:
             return False, "Token is valid but lacks required permissions"
         return False, str(e)
     finally:
-        huggingface_hub.constants.HF_HUB_OFFLINE = original_offline
+        set_offline_mode(True)
 
 
 def save_hf_token(token: str) -> tuple[bool, str]:
@@ -62,14 +61,12 @@ def save_hf_token(token: str) -> tuple[bool, str]:
     # Save to keyring
     try:
         keyring.set_password(SERVICE_NAME, ACCOUNT_NAME, token)
-        # Temporarily disable offline mode for login verification
-        import huggingface_hub.constants
-        original_offline = huggingface_hub.constants.HF_HUB_OFFLINE
-        huggingface_hub.constants.HF_HUB_OFFLINE = False
+        # Temporarily disable offline mode for login
+        set_offline_mode(False)
         try:
             huggingface_hub.login(token=token)
         finally:
-            huggingface_hub.constants.HF_HUB_OFFLINE = original_offline
+            set_offline_mode(True)
         return True, f"Token saved and verified for user: {msg}"
     except keyring.errors.KeyringError as e:
         return False, f"Keyring error (macOS Keychain unavailable?): {e}"
@@ -87,16 +84,14 @@ def load_hf_token() -> str | None:
         if token:
             # Set environment variable for subprocesses (worker.py, etc.)
             os.environ["HF_TOKEN"] = token
-            
-            import huggingface_hub.constants
-            original_offline = huggingface_hub.constants.HF_HUB_OFFLINE
-            huggingface_hub.constants.HF_HUB_OFFLINE = False
+
+            set_offline_mode(False)
             try:
                 huggingface_hub.login(token=token)
             except Exception as e:
                 print(f"HF auth: login verification skipped/failed: {e}", file=sys.stderr)
             finally:
-                huggingface_hub.constants.HF_HUB_OFFLINE = original_offline
+                set_offline_mode(True)
                     
             print("HF auth: token loaded from keyring and activated", file=sys.stderr)
         return token

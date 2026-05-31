@@ -16,14 +16,18 @@ import sys
 import os
 import json
 
-# Silence HF env vars before any library imports
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
-os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+# Make server package importable when run as a subprocess
+_script_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+if _script_dir not in sys.path:
+    sys.path.insert(0, _script_dir)
+
+from server.services.llm import set_offline_mode
 
 TITLE_MODEL = "mlx-community/Llama-3.2-1B-Instruct-4bit"
 
 
-def main():
+def main() -> None:
     try:
         raw = sys.stdin.read()
         if not raw.strip():
@@ -43,13 +47,7 @@ def main():
             model, tokenizer = mlx_lm.load(TITLE_MODEL)
         except Exception:
             print("[title_worker] retrying with networking enabled", file=sys.stderr)
-            os.environ["HF_HUB_OFFLINE"] = "0"
-            os.environ["TRANSFORMERS_OFFLINE"] = "0"
-            try:
-                import huggingface_hub.constants
-                huggingface_hub.constants.HF_HUB_OFFLINE = False
-            except Exception:
-                pass
+            set_offline_mode(False)
             model, tokenizer = mlx_lm.load(TITLE_MODEL)
 
         # Generate
@@ -75,7 +73,7 @@ def main():
         _respond({"error": str(e)})
 
 
-def _respond(data: dict):
+def _respond(data: dict) -> None:
     sys.stdout.write(json.dumps(data) + "\n")
     sys.stdout.flush()
 

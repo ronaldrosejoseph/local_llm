@@ -10,16 +10,14 @@ import threading
 import asyncio
 import json
 import shutil
-
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from contextlib import closing
 from huggingface_hub import HfApi
-
 from server import state
 from server.db import get_db_connection
 from server.models import ModelAdd
-from server.services.llm import is_model_cached
+from server.services.llm import set_offline_mode
 
 router = APIRouter()
 
@@ -74,10 +72,7 @@ async def add_model(model_data: ModelAdd):
     def download_thread():
         try:
             # Temporarily enable networking for download
-            import huggingface_hub.constants
-            os.environ["HF_HUB_OFFLINE"] = "0"
-            os.environ["TRANSFORMERS_OFFLINE"] = "0"
-            huggingface_hub.constants.HF_HUB_OFFLINE = False
+            set_offline_mode(False)
 
             # 1. Verify model existence on Hugging Face
             api = HfApi()
@@ -100,20 +95,12 @@ async def add_model(model_data: ModelAdd):
                     pass
 
             # Restore offline mode for safety
-            os.environ["HF_HUB_OFFLINE"] = "1"
-            os.environ["TRANSFORMERS_OFFLINE"] = "1"
-            huggingface_hub.constants.HF_HUB_OFFLINE = True
+            set_offline_mode(True)
 
             result_q.put({"status": "ready", "model": model_data.name.split("/")[-1], "full": model_data.name})
         except Exception as e:
             # Restore offline mode even on error
-            os.environ["HF_HUB_OFFLINE"] = "1"
-            os.environ["TRANSFORMERS_OFFLINE"] = "1"
-            try:
-                import huggingface_hub.constants
-                huggingface_hub.constants.HF_HUB_OFFLINE = True
-            except:
-                pass
+            set_offline_mode(True)
             result_q.put({"status": "error", "message": str(e)})
 
     threading.Thread(target=download_thread, daemon=True).start()

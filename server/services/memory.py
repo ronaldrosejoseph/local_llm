@@ -3,22 +3,16 @@ Hybrid Memory System — three-layer context assembly for LLM prompts.
 
 Layer 1: Rolling Window  — last N turns (token-budget aware)
 Layer 2: Summary         — progressive compression of older turns
-Layer 3: Vector Memory   — semantic retrieval across all chats
 
 The context assembly pipeline fills the model's context window intelligently:
   [system prompt] → [summary] → [retrieved memories] → [rolling window] → [current message]
 """
 
-import json
 import threading
-import numpy as np
-
 from contextlib import closing
-
 from server import state
 from server.db import get_db_connection
 from server.config import load_config
-from server.services.rag import get_embedder
 
 
 # ---------------------------------------------------------------------------
@@ -32,18 +26,6 @@ def count_tokens(text: str) -> int:
     the heuristic. This is accurate enough for context window budgeting.
     """
     return int(len(text.split()) * 1.3)
-
-
-def count_message_tokens(messages: list[dict]) -> int:
-    """Count total tokens for a list of chat messages.
-    
-    Accounts for chat-template overhead (~4 tokens per message for role
-    tags, delimiters, etc.).
-    """
-    total = 0
-    for msg in messages:
-        total += count_tokens(msg["content"]) + 4  # role tags overhead
-    return total
 
 
 # ---------------------------------------------------------------------------
@@ -84,7 +66,7 @@ def assemble_context(chat_id: str, current_message: str, system_prompt: str,
 
     # 1. System prompt (always)
     if system_prompt:
-        system_tokens = count_tokens(system_prompt) + 4
+        system_tokens = count_tokens(system_prompt) + 6  # Add some overhead for formatting
         used_tokens += system_tokens
 
     # 2. Reserve generation headroom
@@ -96,7 +78,7 @@ def assemble_context(chat_id: str, current_message: str, system_prompt: str,
     if combined_context:
         augmented_message = f"{combined_context}\nInstructions: Utilizing the context provided above, answer the following query:\n\n{current_message.replace('/web', '').strip()}"
 
-    current_msg_tokens = count_tokens(augmented_message) + 4
+    current_msg_tokens = count_tokens(augmented_message) + 10  # Add some overhead for formatting and injection
     used_tokens += current_msg_tokens
 
     # --- Flexible allocations (fill the remaining budget) ---
@@ -189,7 +171,7 @@ def _build_rolling_window(chat_id: str, token_budget: int) -> list[dict]:
     selected = []
     remaining = token_budget
     for row in rows:
-        msg_tokens = count_tokens(row["content"]) + 4
+        msg_tokens = count_tokens(row["content"]) + 15  # Add some overhead for formatting
         if msg_tokens > remaining:
             break  # Can't fit this message, stop
         selected.append({
@@ -208,7 +190,7 @@ def _build_rolling_window(chat_id: str, token_budget: int) -> list[dict]:
 # Progressive summarization (async, post-generation)
 # ---------------------------------------------------------------------------
 
-def maybe_update_summary(chat_id: str):
+def maybe_update_summary(chat_id: str) -> None:
     """Check if messages have fallen out of the rolling window and update the summary.
     
     This runs asynchronously after generation. It:
@@ -254,7 +236,7 @@ def maybe_update_summary(chat_id: str):
     window_ids = set()
     budget = approx_window_budget
     for msg in reversed(all_msgs):
-        tokens = count_tokens(msg["content"]) + 4
+        tokens = count_tokens(msg["content"]) + 10  # Add some overhead for formatting
         if tokens > budget:
             break
         window_ids.add(msg["id"])
@@ -350,12 +332,11 @@ def maybe_update_summary(chat_id: str):
         state.generation_lock.release()
 
 
-def post_generation_tasks(chat_id: str, user_content: str,
-                           assistant_content: str, assistant_msg_id: int):
+def post_generation_tasks(chat_id: str) -> None:
     """Run all post-generation memory tasks in a background thread.
-    
+
     Called after the response has been fully streamed and saved.
-    Tasks: embed the turn pair, update the summary if needed.
+    Currently handles progressive summarization.
     """
     def _run():
         try:

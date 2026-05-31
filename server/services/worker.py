@@ -34,9 +34,12 @@ import traceback
 import warnings
 import logging
 
-# Silence HF env vars before any library imports
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
-os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+# Make server package importable when run as a subprocess
+_script_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _script_dir not in sys.path:
+    sys.path.insert(0, _script_dir)
+
+from server.services.llm import set_offline_mode
 
 # ── Prevent library diagnostic output from contaminating the IPC channel ──
 # Save the real stdout fd for IPC responses, then redirect Python's stdout
@@ -61,24 +64,24 @@ _model_name = None
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _respond(data: dict):
+def _respond(data: dict) -> None:
     """Write a single JSON object to the IPC channel (real stdout)."""
     _ipc_out.write(json.dumps(data) + "\n")
     _ipc_out.flush()
 
 
-def _error(request_id: str, message: str):
+def _error(request_id: str, message: str) -> None:
     _respond({"request_id": request_id, "type": "error", "message": message})
 
 
-def _done(request_id: str, **kwargs):
+def _done(request_id: str, **kwargs) -> None:
     payload = {"request_id": request_id, "type": "done"}
     if kwargs:
         payload.update(kwargs)
     _respond(payload)
 
 
-def _stream_thinking_aware(request_id, token_iter, end_tag):
+def _stream_thinking_aware(request_id, token_iter, end_tag) -> object | None:
     """Buffer tokens until the thinking end tag is found, then emit typed events.
 
     - Closing tags (start with </ or ◁/): find the first occurrence.
@@ -186,7 +189,7 @@ def _detect_context_length() -> int:
     return 8192
 
 
-def _load_model(model_name: str, offline: bool = True):
+def _load_model(model_name: str, offline: bool = True) -> tuple[bool, str, bool, int, str | None]:
     """Load a model (VLM-first, LLM-fallback). Sets module-level globals.
 
     Returns (success, model_name, is_vlm, context_length, error_message).
@@ -197,13 +200,7 @@ def _load_model(model_name: str, offline: bool = True):
     last_error = None
 
     # Set offline mode
-    os.environ["HF_HUB_OFFLINE"] = "1" if offline else "0"
-    os.environ["TRANSFORMERS_OFFLINE"] = "1" if offline else "0"
-    try:
-        import huggingface_hub.constants
-        huggingface_hub.constants.HF_HUB_OFFLINE = offline
-    except Exception:
-        pass
+    set_offline_mode(offline)
 
     print(f"[worker] loading model: {model_name} (offline={offline})", file=sys.stderr)
 
@@ -226,7 +223,6 @@ def _load_model(model_name: str, offline: bool = True):
 
     # Attempt 2: standard LLM
     try:
-        import mlx_lm
         from mlx_lm import load
 
         _model, _tokenizer = load(model_name)
@@ -244,13 +240,7 @@ def _load_model(model_name: str, offline: bool = True):
     # Attempt 3: retry with networking enabled (if first attempt was offline)
     if offline:
         print("[worker] retrying with networking enabled", file=sys.stderr)
-        os.environ["HF_HUB_OFFLINE"] = "0"
-        os.environ["TRANSFORMERS_OFFLINE"] = "0"
-        try:
-            import huggingface_hub.constants
-            huggingface_hub.constants.HF_HUB_OFFLINE = False
-        except Exception:
-            pass
+        set_offline_mode(False)
 
         try:
             import mlx_vlm
@@ -266,7 +256,6 @@ def _load_model(model_name: str, offline: bool = True):
             pass
 
         try:
-            import mlx_lm
             from mlx_lm import load
             _model, _tokenizer = load(model_name)
             _processor = None
@@ -284,7 +273,7 @@ def _load_model(model_name: str, offline: bool = True):
     return False, model_name, False, 8192, last_error
 
 
-def _unload_model():
+def _unload_model() -> None:
     """Free VRAM held by the current model."""
     global _model, _tokenizer, _processor, _vlm_config, _is_vlm, _model_name
 
@@ -311,7 +300,7 @@ def _unload_model():
 def _generate_inner(request_id: str, messages: list, is_vlm: bool, stream: bool,
                     max_tokens: int, temperature: float, top_p: float,
                     repetition_penalty: float, images: list,
-                    thinking_end_tag: str = None):
+                    thinking_end_tag: str = None) -> None:
     """Core generation — applies template, calls mlx, writes token/result responses.
 
     When thinking_end_tag is set, the streaming path buffers output until the
@@ -400,7 +389,7 @@ def _generate_inner(request_id: str, messages: list, is_vlm: bool, stream: bool,
 # Command dispatch
 # ---------------------------------------------------------------------------
 
-def _handle_command(cmd: dict):
+def _handle_command(cmd: dict) -> None:
     """Route a command to the appropriate handler."""
     command = cmd.get("command")
     request_id = cmd.get("request_id", "unknown")
@@ -457,7 +446,7 @@ def _handle_command(cmd: dict):
 # Main loop
 # ---------------------------------------------------------------------------
 
-def main():
+def main() -> None:
     print("[worker] started, reading commands from stdin", file=sys.stderr)
     for line in sys.stdin:
         line = line.strip()

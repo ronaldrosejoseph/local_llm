@@ -8,16 +8,14 @@ generation, health checks, and crash recovery.
 import os
 import re
 import sys
-import gc
 import json
 import uuid
 import asyncio
 import subprocess
 import signal
-import threading
 from pathlib import Path
+from collections.abc import AsyncGenerator
 from contextlib import closing
-
 from server import state
 from server.db import get_db_connection
 
@@ -58,7 +56,7 @@ class ModelManager:
     # Lifecycle
     # ------------------------------------------------------------------
 
-    async def start(self):
+    async def start(self) -> None:
         """Spawn the worker child process and load the active model."""
         self._loop = asyncio.get_running_loop()
         self._shutting_down = False
@@ -86,7 +84,7 @@ class ModelManager:
         state.MODEL_NAME = name
         print(f"ModelManager: started with model={name}, is_vlm={self.is_vlm}", file=sys.stderr)
 
-    async def stop(self):
+    async def stop(self) -> None:
         """Gracefully shut down the worker process."""
         self._shutting_down = True
 
@@ -198,7 +196,7 @@ class ModelManager:
 
         return False, fallback
 
-    async def unload_model(self):
+    async def unload_model(self) -> None:
         """Tell the child to unload its model (frees VRAM for FLUX)."""
         if self.process is None or self.process.poll() is not None:
             return
@@ -213,7 +211,7 @@ class ModelManager:
                               image_paths: list = None, max_tokens: int = 8192,
                               temperature: float = 0.3, top_p: float = 0.9,
                               repetition_penalty: float = 1.1,
-                              thinking_end_tag: str = None):
+                              thinking_end_tag: str = None) -> AsyncGenerator[tuple[str, str], None]:
         """Stream tokens from the child process. Yields (type, text) tuples.
 
         When thinking_end_tag is set and the worker detects the tag in the
@@ -287,14 +285,14 @@ class ModelManager:
     # Synchronous wrappers (for thread-based callers like FLUX)
     # ------------------------------------------------------------------
 
-    def sync_unload_model(self, timeout: float = 120):
+    def sync_unload_model(self, timeout: float = 120) -> None:
         """Thread-safe synchronous unload."""
         if self._loop is None:
             return
         future = asyncio.run_coroutine_threadsafe(self.unload_model(), self._loop)
         return future.result(timeout=timeout)
 
-    def sync_load_model(self, model_name: str, timeout: float = 300):
+    def sync_load_model(self, model_name: str, timeout: float = 300) -> tuple[bool, str]:
         """Thread-safe synchronous load."""
         if self._loop is None:
             return False, model_name
@@ -347,7 +345,7 @@ class ModelManager:
         # Use a generous token budget — thinking models burn tokens on
         # chain-of-thought before emitting the end tag.
         hi_response = self.sync_nonstream_generate(
-            [{"role": "user", "content": "Hi"}],
+            [{"role": "user", "content": "whats up?"}],
             is_vlm=self.is_vlm,
             max_tokens=2048,
             timeout=120,
@@ -365,7 +363,7 @@ class ModelManager:
         self._persist_thinking_result(model_name, has_thinking=False, end_tag=None)
         return False, None
 
-    def _persist_thinking_result(self, model_name: str, has_thinking: bool, end_tag: str | None):
+    def _persist_thinking_result(self, model_name: str, has_thinking: bool, end_tag: str | None) -> None:
         """Store the thinking detection result in the models table.
 
         Only updates if has_thinking is still NULL — avoids overwriting
@@ -386,7 +384,7 @@ class ModelManager:
     # Internal: subprocess management
     # ------------------------------------------------------------------
 
-    def _spawn_process(self):
+    def _spawn_process(self) -> None:
         """Spawn the worker.py child process."""
         worker_path = str(_WORKER_PATH)
         python_exe = sys.executable
@@ -410,7 +408,7 @@ class ModelManager:
         # Start a stderr reader to log worker diagnostics
         asyncio.create_task(self._log_stderr())
 
-    async def _log_stderr(self):
+    async def _log_stderr(self) -> None:
         """Read worker stderr, log it, and keep a tail buffer for crash diagnostics."""
         if self.process is None or self.process.stderr is None:
             return
@@ -437,7 +435,7 @@ class ModelManager:
             except Exception:
                 break
 
-    async def _send_raw(self, data: dict):
+    async def _send_raw(self, data: dict) -> None:
         """Send a JSON command to the child's stdin (thread-safe)."""
         async with self._send_lock:
             if self.process is None or self.process.poll() is not None:
@@ -451,7 +449,7 @@ class ModelManager:
             except (BrokenPipeError, OSError) as e:
                 raise InferenceCrash(f"Failed to send to worker: {e}") from e
 
-    async def _read_responses(self, request_id: str):
+    async def _read_responses(self, request_id: str) -> AsyncGenerator[dict, None]:
         """Async generator that yields responses for a given request_id.
 
         The background reader task puts responses into self._pending[request_id].
@@ -496,7 +494,7 @@ class ModelManager:
     # Background reader
     # ------------------------------------------------------------------
 
-    async def _reader_loop(self):
+    async def _reader_loop(self) -> None:
         """Read lines from child stdout and dispatch to pending queues."""
         if self.process is None or self.process.stdout is None:
             return
@@ -538,7 +536,7 @@ class ModelManager:
                 except asyncio.QueueFull:
                     pass
 
-    async def _handle_child_exit(self):
+    async def _handle_child_exit(self) -> None:
         """Called when the child's stdout closes (process died)."""
         if self._shutting_down:
             return
@@ -555,7 +553,7 @@ class ModelManager:
         # Trigger crash recovery
         await self._crash_recovery()
 
-    async def _crash_recovery(self):
+    async def _crash_recovery(self) -> None:
         """Restart the worker with the fallback model after a crash."""
         print("ModelManager: starting crash recovery...", file=sys.stderr)
 
@@ -606,7 +604,7 @@ class ModelManager:
         self._ping_fail_count = 0
         print(f"ModelManager: crash recovery complete, now running {name}", file=sys.stderr)
 
-    async def cancel_generation(self):
+    async def cancel_generation(self) -> None:
         """Kill the worker and restart with the current model.
 
         Called when the user stops generation. The worker process is stuck
@@ -668,7 +666,7 @@ class ModelManager:
     # Health check
     # ------------------------------------------------------------------
 
-    async def _health_loop(self):
+    async def _health_loop(self) -> None:
         """Periodically ping the child process.
 
         Pings are skipped during active generation (the serial stdin/stdout
@@ -750,7 +748,7 @@ def _extract_crash_detail(stderr_tail: list[str]) -> str:
     return "\n".join(relevant[-3:])  # at most the last 3 crash lines
 
 
-def _notify_pending_crash(pending: dict, detail: str = ""):
+def _notify_pending_crash(pending: dict, detail: str = "") -> None:
     """Push error+done to every pending request queue so generators wake up."""
     msg = "Model process crashed (OOM or unexpected error)"
     if detail:
@@ -770,7 +768,7 @@ def _notify_pending_crash(pending: dict, detail: str = ""):
 # Orphan cleanup
 # ------------------------------------------------------------------
 
-def _update_model_type_in_db(model_name: str, is_vlm: bool):
+def _update_model_type_in_db(model_name: str, is_vlm: bool) -> None:
     """Persist model type from worker load result to DB.
 
     Only fills in NULL (not-yet-verified) entries. Once a type is set
@@ -790,7 +788,7 @@ def _update_model_type_in_db(model_name: str, is_vlm: bool):
         pass
 
 
-def _kill_orphan_workers():
+def _kill_orphan_workers() -> None:
     """Kill any leftover worker.py processes from previous runs."""
     try:
         result = subprocess.run(

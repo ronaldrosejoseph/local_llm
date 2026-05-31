@@ -3,11 +3,9 @@ HuggingFace token management routes — verify, save, delete, status.
 """
 
 from fastapi import APIRouter, HTTPException
-
 from server.services.hf_auth import (
     verify_token,
     save_hf_token,
-    load_hf_token,
     delete_hf_token,
     has_token,
 )

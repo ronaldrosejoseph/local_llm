@@ -7,16 +7,6 @@ import json
 
 _DATA_DIR = os.environ.get("LOCAL_LLM_DATA_DIR", ".")
 CONFIG_PATH = os.path.join(_DATA_DIR, "config.json")
-
-
-def get_data_dir():
-    """Return the writable data directory, respecting LOCAL_LLM_DATA_DIR."""
-    return os.environ.get("LOCAL_LLM_DATA_DIR", ".")
-
-
-def get_static_dir():
-    """Return the base directory for user-generated static files (images, uploads)."""
-    return os.path.join(get_data_dir(), "static")
 DEFAULT_CONFIG = {
     "max_tokens": 8192,
     "temperature": 0.3,
@@ -31,6 +21,15 @@ DEFAULT_CONFIG = {
     "context_window_pct": 100,     # % of model's context window to use. Lower = less RAM
 }
 
+def get_data_dir() -> str:
+    """Return the writable data directory, respecting LOCAL_LLM_DATA_DIR."""
+    return os.environ.get("LOCAL_LLM_DATA_DIR", ".")
+
+
+def get_static_dir() -> str:
+    """Return the base directory for user-generated static files (images, uploads)."""
+    return os.path.join(get_data_dir(), "static")
+
 
 def load_config() -> dict:
     """Load config from disk, falling back to defaults for any missing keys."""
@@ -44,6 +43,6 @@ def load_config() -> dict:
     return dict(DEFAULT_CONFIG)
 
 
-def save_config(cfg: dict):
+def save_config(cfg: dict) -> None:
     with open(CONFIG_PATH, "w") as f:
         json.dump(cfg, f, indent=2)

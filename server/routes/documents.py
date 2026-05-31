@@ -6,10 +6,8 @@ import os
 import re
 import uuid
 import io
-
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from contextlib import closing
-
 from server import state
 from server.db import get_db_connection
 from server.config import load_config, get_static_dir
@@ -121,7 +119,7 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
 
                     save_documents_to_db(chat_id)
                     from server.services.rag import build_rag_context
-                    _, rag_meta = build_rag_context(chat_id, "")
+                    _, rag_meta = build_rag_context(chat_id)
                     return {"status": "ok", "chunks": len(img_paths), "total_pages": total_pages,
                             "filename": file.filename, "vision": True, "rag_status": rag_meta}
                 else:
@@ -184,7 +182,7 @@ async def upload_document(chat_id: str = Form(...), file: UploadFile = File(...)
 
         save_documents_to_db(chat_id)
         from server.services.rag import build_rag_context
-        _, rag_meta = build_rag_context(chat_id, "")
+        _, rag_meta = build_rag_context(chat_id)
 
         return {"status": "ok", "chunks": len(chunks), "filename": file.filename,
                 "rag_active": emb_model is not None, "rag_status": rag_meta,

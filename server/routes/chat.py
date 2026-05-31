@@ -10,12 +10,10 @@ import re
 import asyncio
 import queue
 import threading
-
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from contextlib import closing
 from typing import Optional
-
 from server import state
 from server.db import get_db_connection
 from server.config import load_config, get_static_dir
@@ -85,7 +83,7 @@ def _clean_title(title: str) -> str:
     return title.strip()
 
 
-async def internal_generate_title(chat_id: str):
+async def internal_generate_title(chat_id: str) -> dict:
     """
     Internal helper to summarize chat context into a title.
     Can be called by API routes or background memory tasks.
@@ -339,7 +337,7 @@ async def internal_generate_title(chat_id: str):
 def get_rag_status(chat_id: str):
     from server.services.rag import build_rag_context
     # Fetch status directly from build_rag_context to ensure 'total' reflects the current mode/filter
-    res = build_rag_context(chat_id, "")
+    res = build_rag_context(chat_id)
     
     with closing(get_db_connection()) as conn:
         row = conn.execute("SELECT rag_search_mode, rag_search_query FROM chats WHERE id = ?", (chat_id,)).fetchone()
@@ -660,7 +658,7 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
     # Build RAG document context (existing system)
     doc_context = ""
     if chat_id in state.document_store and state.document_store[chat_id]:
-        doc_context, text_rag_meta = build_rag_context(chat_id, message_content)
+        doc_context, text_rag_meta = build_rag_context(chat_id)
         if text_rag_meta and not rag_meta:
             rag_meta = text_rag_meta
 
@@ -806,7 +804,7 @@ async def chat_endpoint(chat_data: ChatCreate, chat_id: Optional[str] = None):
 
             # Kick off async memory tasks (embedding + summarization)
             if full_response and assistant_msg_id:
-                post_generation_tasks(chat_id, chat_data.message, full_response, assistant_msg_id)
+                post_generation_tasks(chat_id)
 
             yield "data: [DONE]\n\n"
 

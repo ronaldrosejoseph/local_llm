@@ -3,9 +3,7 @@ Speech routes — text-to-speech via macOS `say` command.
 """
 
 import subprocess
-
 from fastapi import APIRouter, HTTPException
-
 from server import state
 from server.models import SayRequest
 

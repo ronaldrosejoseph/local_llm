@@ -9,19 +9,9 @@ from pydantic import BaseModel
 from typing import Optional
 
 
-class Message(BaseModel):
-    role: str
-    content: str
-
-
 class ChatCreate(BaseModel):
     message: str
     system_prompt: Optional[str] = None
-
-
-class ChatResponse(BaseModel):
-    chat_id: str
-    response: str
 
 
 class SayRequest(BaseModel):

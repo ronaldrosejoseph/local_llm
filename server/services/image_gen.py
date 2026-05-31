@@ -11,11 +11,8 @@ import json
 import queue
 import asyncio
 import threading
-import traceback
-import uuid
-
+from collections.abc import AsyncGenerator
 from contextlib import closing
-
 from server import state
 from server.config import load_config, get_static_dir
 from server.db import get_db_connection
@@ -23,7 +20,7 @@ from server.db import get_db_connection
 
 def run_flux_pipeline(prompt: str, chat_id: str, q: queue.Queue, img_name: str,
                       source_image_path: str = None, strength: float = 0.15,
-                      steps: int = 4, result_message: str = "Here is the image you requested:"):
+                      steps: int = 4, result_message: str = "Here is the image you requested:") -> None:
     """
     Shared FLUX generation thread target.
 
@@ -202,7 +199,7 @@ def run_flux_pipeline(prompt: str, chat_id: str, q: queue.Queue, img_name: str,
 
 async def flux_sse_generator(chat_id: str, q: queue.Queue,
                              title: str, action_text: str,
-                             progress_text: str, alt_text: str):
+                             progress_text: str, alt_text: str) -> AsyncGenerator[str, None]:
     """
     Shared SSE streaming generator that consumes FLUX progress from the queue.
     """

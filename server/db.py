@@ -13,7 +13,7 @@ else:
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     DB_PATH = os.path.join(BASE_DIR, "database", "chats.db")
 
-def get_db_connection():
+def get_db_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute('PRAGMA journal_mode=WAL;')
@@ -21,7 +21,7 @@ def get_db_connection():
     conn.execute('PRAGMA foreign_keys = ON;')
     return conn
 
-def reset_to_default_model():
+def reset_to_default_model() -> None:
     """Reset the active model to a safe default in case of a crash recovery."""
     conn = get_db_connection()
     try:

@@ -3,7 +3,6 @@ Config routes — get and update generation parameters.
 """
 
 from fastapi import APIRouter
-
 from server.config import load_config, save_config
 from server.models import ConfigUpdate
 

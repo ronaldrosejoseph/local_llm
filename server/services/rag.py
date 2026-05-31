@@ -6,12 +6,9 @@ and semantic similarity retrieval for document context injection.
 """
 
 import os
-import re
 import uuid
 import json
-
 import numpy as np
-
 from server import state
 from server.config import load_config, get_static_dir
 from server.db import get_db_connection
@@ -50,7 +47,7 @@ CODE_EXTENSIONS = {
 }
 
 
-def get_embedder():
+def get_embedder() -> object | None:
     """Lazy-load the SentenceTransformer embedding model."""
     if state.embedder_model is None:
         from server.services.llm import set_offline_mode
@@ -77,7 +74,7 @@ def get_embedder():
     return state.embedder_model
 
 
-def pdf_to_images(pdf_content: bytes, chat_id: str, start_page: int = 0, limit: int = 5):
+def pdf_to_images(pdf_content: bytes, chat_id: str, start_page: int = 0, limit: int = 5) -> tuple[list[str], int]:
     """Converts PDF pages to images for Vision model consumption."""
     import fitz  # PyMuPDF
 
@@ -100,7 +97,7 @@ def pdf_to_images(pdf_content: bytes, chat_id: str, start_page: int = 0, limit: 
     return image_paths, total_pages
 
 
-def build_rag_context(chat_id: str, query_content: str):
+def build_rag_context(chat_id: str) -> tuple[str, dict | None]:
     """
     Build RAG context string for the latest user message.
 
@@ -217,7 +214,7 @@ def build_rag_context(chat_id: str, query_content: str):
     return doc_context, rag_meta
 
 
-def handle_vision_pdf_pagination(chat_id: str):
+def handle_vision_pdf_pagination(chat_id: str) -> dict | None:
     """
     Handle on-demand extraction of additional PDF pages for Vision models.
 
@@ -266,7 +263,7 @@ def handle_vision_pdf_pagination(chat_id: str):
     }
 
 
-def save_documents_to_db(chat_id: str):
+def save_documents_to_db(chat_id: str) -> None:
     """Persist document_store entries for a chat to the documents table."""
     if chat_id not in state.document_store:
         return

@@ -5,7 +5,6 @@ Only use when removing the app.
 
 import os
 import shutil
-
 from fastapi import APIRouter
 
 router = APIRouter()
